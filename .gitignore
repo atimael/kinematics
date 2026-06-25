@@ -1,0 +1,17 @@
+# Python
+backend/.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Project data (uploaded footage + pipeline outputs)
+backend/data/projects/*
+!backend/data/projects/.gitkeep
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# OS
+.DS_Store
