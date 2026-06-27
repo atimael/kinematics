@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useProject } from "../api/queries";
-import { Stepper, type StepKey } from "../components/Stepper";
+import { StageIndicator, STEP_ORDER, type StepKey } from "../components/StageIndicator";
 import { Badge, Card, Spinner } from "../components/ui";
 import { CalibrationStep } from "./steps/CalibrationStep";
 import { TrialVideosStep } from "./steps/TrialVideosStep";
@@ -16,13 +16,7 @@ function deriveStep(status: ProjectStatus): StepKey {
   return "calibration";
 }
 
-function reachedSteps(status: ProjectStatus): Set<StepKey> {
-  const r = new Set<StepKey>(["calibration"]);
-  if (["calibrated", "processing", "processed"].includes(status)) r.add("videos");
-  if (["processing", "processed"].includes(status)) r.add("processing");
-  if (status === "processed") r.add("results");
-  return r;
-}
+const rank = (s: StepKey) => STEP_ORDER.indexOf(s);
 
 export default function Project() {
   const { id = "" } = useParams();
@@ -52,8 +46,8 @@ export default function Project() {
     );
   }
 
-  const active = step ?? deriveStep(project.status);
-  const reached = reachedSteps(project.status);
+  const derived = deriveStep(project.status);
+  const active = step && rank(step) > rank(derived) ? step : derived;
 
   return (
     <div className="space-y-6">
@@ -69,7 +63,7 @@ export default function Project() {
             </Badge>
           </div>
         </div>
-        <Stepper active={active} reached={reached} onJump={setStep} />
+        <StageIndicator active={active} />
       </div>
 
       {active === "calibration" && <CalibrationStep project={project} goNext={() => setStep("videos")} />}

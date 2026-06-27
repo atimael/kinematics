@@ -24,6 +24,7 @@ export function ProcessingStep({ project, goResults }: { project: ProjectMeta; g
 
   const job = data?.job;
   const failed = project.status === "failed" || job?.status === "failed";
+  const done = project.status === "processed";
 
   const onDone = (status: "done" | "failed") => {
     qc.invalidateQueries({ queryKey: ["project", project.id] });
@@ -50,11 +51,11 @@ export function ProcessingStep({ project, goResults }: { project: ProjectMeta; g
           ))}
         </ol>
 
-        {isLoading || (!job && !failed) ? (
+        {!done && (isLoading || (!job && !failed)) ? (
           <div className="flex items-center gap-2 text-[13px] text-muted">
             <Spinner /> Starting worker…
           </div>
-        ) : job ? (
+        ) : job && !done ? (
           <div className="rounded-xl border border-line p-4">
             <JobProgress projectId={project.id} jobId={job.id} onDone={onDone} />
           </div>
