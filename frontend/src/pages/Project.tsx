@@ -28,6 +28,12 @@ export default function Project() {
   const { id = "" } = useParams();
   const { data: project, isLoading, error } = useProject(id, { poll: true });
   const [step, setStep] = useState<StepKey | null>(null);
+  const [prevId, setPrevId] = useState(id);
+
+  if (id !== prevId) {
+    setPrevId(id);
+    setStep(null);
+  }
 
   if (isLoading) {
     return (

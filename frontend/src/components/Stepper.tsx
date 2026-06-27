@@ -17,16 +17,19 @@ export function Stepper({
   onJump: (s: StepKey) => void;
 }) {
   return (
-    <ol className="flex items-center gap-2">
+    <ol className="flex flex-wrap items-center gap-y-2">
       {STEPS.map((s, i) => {
         const isActive = s.key === active;
         const isReached = reached.has(s.key);
+        const clickable = isReached || isActive;
         return (
           <li key={s.key} className="flex items-center gap-2">
             <button
-              disabled={!isReached && !isActive}
-              onClick={() => (isReached || isActive) && onJump(s.key)}
-              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-medium transition ${
+              disabled={!clickable}
+              onClick={() => clickable && onJump(s.key)}
+              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-medium transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${
+                clickable ? "active:scale-[0.97]" : "cursor-default"
+              } ${
                 isActive
                   ? "bg-brand text-white"
                   : isReached

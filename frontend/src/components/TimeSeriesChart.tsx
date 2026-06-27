@@ -97,8 +97,9 @@ export function Chips({
         return (
           <button
             key={o}
+            aria-pressed={on}
             onClick={() => onToggle(o)}
-            className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
+            className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition duration-150 ease-out active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${
               on ? "bg-brand text-white" : "bg-line/60 text-muted hover:text-ink"
             }`}
           >
