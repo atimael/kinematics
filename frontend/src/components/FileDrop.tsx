@@ -36,7 +36,7 @@ export function FileDrop({
         setOver(false);
         handle(e.dataTransfer.files);
       }}
-      className={`flex w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-3 py-4 text-center transition ${
+      className={`flex w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-3 py-4 text-center transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${
         over ? "border-brand bg-brand-soft" : done ? "border-good/40 bg-good/5" : "border-line bg-bg hover:border-brand/50"
       }`}
     >

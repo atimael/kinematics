@@ -1,4 +1,7 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
 
 type Tone = "neutral" | "good" | "warn" | "bad" | "brand";
 
@@ -50,7 +53,7 @@ export function Button({
   }[variant];
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition disabled:cursor-not-allowed ${styles} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition duration-150 ease-out active:scale-[0.97] disabled:cursor-not-allowed disabled:active:scale-100 ${focusRing} ${styles} ${className}`}
       {...props}
     />
   );
@@ -91,6 +94,27 @@ export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInpu
   );
 }
 
+export function Select({ className = "", children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <div className="relative">
+      <select
+        className={`w-full appearance-none rounded-lg border border-line bg-surface px-3 py-2 pr-9 text-[14px] text-ink outline-none transition-[border-color,box-shadow] duration-150 ease-out focus:border-brand focus:ring-2 focus:ring-brand/15 ${className}`}
+        {...props}
+      >
+        {children}
+      </select>
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+      >
+        <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
 export function Spinner({ className = "" }: { className?: string }) {
   return (
     <span
@@ -110,11 +134,18 @@ export function Stat({ label, value, tone = "neutral" }: { label: string; value:
 }
 
 export function ProgressBar({ pct }: { pct: number }) {
+  const clamped = Math.max(2, Math.min(100, pct));
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-line">
+    <div
+      className="h-2 w-full overflow-hidden rounded-full bg-line"
+      role="progressbar"
+      aria-valuenow={Math.round(clamped)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div
-        className="h-full rounded-full bg-brand transition-[width] duration-300"
-        style={{ width: `${Math.max(2, Math.min(100, pct))}%` }}
+        className="h-full w-full origin-left rounded-full bg-brand transition-transform duration-300 ease-out"
+        style={{ transform: `scaleX(${clamped / 100})` }}
       />
     </div>
   );
@@ -134,16 +165,18 @@ export function Toggle({
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-4 rounded-lg border border-line bg-surface px-3.5 py-2.5 text-left"
+      className={`flex w-full items-center justify-between gap-4 rounded-lg border border-line bg-surface px-3.5 py-2.5 text-left transition-colors duration-150 ease-out hover:border-brand/40 ${focusRing}`}
     >
       <span>
         <span className="block text-[13px] font-medium">{label}</span>
         {hint && <span className="block text-[12px] text-muted">{hint}</span>}
       </span>
-      <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${checked ? "bg-brand" : "bg-line"}`}>
+      <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-out ${checked ? "bg-brand" : "bg-line"}`}>
         <span
-          className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-[left] ${checked ? "left-[18px]" : "left-0.5"}`}
+          className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow transition-transform duration-200 ease-out ${checked ? "translate-x-4" : "translate-x-0"}`}
         />
       </span>
     </button>

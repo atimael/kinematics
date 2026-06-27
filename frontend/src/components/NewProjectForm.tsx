@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreateProject } from "../api/queries";
 import type { ProjectParams } from "../types";
-import { Button, Card, CardHeader, Field, Input, Toggle } from "./ui";
+import { Button, Card, CardHeader, Field, Input, Select, Toggle } from "./ui";
 
 const DEFAULTS: Partial<ProjectParams> = {
   name: "",
@@ -63,14 +63,13 @@ export function NewProjectForm() {
               <Input type="number" step="0.1" value={p.square_size_mm ?? 105} onChange={(e) => set("square_size_mm", Number(e.target.value))} />
             </Field>
             <Field label="Board placement">
-              <select
+              <Select
                 value={p.board_position}
                 onChange={(e) => set("board_position", e.target.value as ProjectParams["board_position"])}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] outline-none focus:border-brand"
               >
                 <option value="horizontal">Horizontal (on floor)</option>
                 <option value="vertical">Vertical</option>
-              </select>
+              </Select>
             </Field>
           </div>
         </div>
@@ -94,21 +93,33 @@ export function NewProjectForm() {
           hint="Keep on unless cameras are hardware-genlocked. Needs a sharp common motion near each clip's start."
         />
 
-        <button onClick={() => setAdvanced((a) => !a)} className="text-[13px] font-medium text-brand">
-          {advanced ? "− Hide" : "+ Show"} advanced options
+        <button
+          type="button"
+          onClick={() => setAdvanced((a) => !a)}
+          aria-expanded={advanced}
+          className="inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium text-brand transition-opacity duration-150 ease-out hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+            className={`size-3.5 transition-transform duration-200 ease-out ${advanced ? "rotate-180" : ""}`}
+          >
+            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Advanced options
         </button>
         {advanced && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="reveal grid gap-4 sm:grid-cols-2">
             <Field label="Pose estimation mode" hint="Higher = more accurate, slower (CPU)">
-              <select
+              <Select
                 value={p.pose_mode}
                 onChange={(e) => set("pose_mode", e.target.value as ProjectParams["pose_mode"])}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] outline-none focus:border-brand"
               >
                 <option value="lightweight">Lightweight</option>
                 <option value="balanced">Balanced</option>
                 <option value="performance">Performance</option>
-              </select>
+              </Select>
             </Field>
             <Field label="Filter cut-off (Hz)" hint="Butterworth low-pass; 6 Hz is the biomech default">
               <Input type="number" step="0.5" value={p.filter_cutoff_hz ?? 6} onChange={(e) => set("filter_cutoff_hz", Number(e.target.value))} />

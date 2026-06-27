@@ -14,8 +14,11 @@ const STATUS_TONE: Record<ProjectStatus, "neutral" | "brand" | "good" | "bad"> =
 
 function ProjectRow({ p, onDelete }: { p: ProjectMeta; onDelete: (id: string) => void }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3.5 hover:bg-bg">
-      <Link to={`/projects/${p.id}`} className="min-w-0 flex-1">
+    <div className="group flex items-center justify-between gap-4 px-5 py-3.5 transition-colors duration-150 ease-out hover:bg-bg">
+      <Link
+        to={`/projects/${p.id}`}
+        className="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+      >
         <div className="flex items-center gap-2.5">
           <span className="truncate text-[14px] font-medium">{p.params.name}</span>
           <Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>
@@ -25,7 +28,10 @@ function ProjectRow({ p, onDelete }: { p: ProjectMeta; onDelete: (id: string) =>
           {p.params.square_size_mm} mm
         </div>
       </Link>
-      <button onClick={() => onDelete(p.id)} className="text-[12px] text-muted hover:text-bad">
+      <button
+        onClick={() => onDelete(p.id)}
+        className="rounded-md px-1.5 py-1 text-[12px] text-muted transition-colors duration-150 ease-out hover:text-bad focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40"
+      >
         Delete
       </button>
     </div>
