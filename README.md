@@ -44,6 +44,73 @@ make dev              # backend on :8000, UI on http://localhost:5173
 
 Or in two terminals: `make backend` and `make frontend`.
 
+### No `make`?
+
+Install it (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install
+make`; Fedora: `sudo dnf install make`), or run the targets by hand:
+
+```bash
+# make install
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install --upgrade pip
+backend/.venv/bin/pip install -r backend/requirements.txt
+cd frontend && pnpm install && cd ..
+
+# make backend  (terminal 1)
+cd backend && MPLBACKEND=Agg QT_QPA_PLATFORM=offscreen PYTHONPATH=. \
+  .venv/bin/python -m uvicorn app.main:app --reload --port 8000
+
+# make frontend (terminal 2)
+cd frontend && pnpm dev
+```
+
+## Windows installation
+
+`make` isn't available on Windows, so run the steps manually. These commands
+assume **PowerShell** from the repo root.
+
+### Prerequisites
+
+- **Python 3.11–3.13, 64-bit** from [python.org](https://www.python.org/downloads/windows/) —
+  tick *"Add python.exe to PATH"* in the installer. (OpenSim 4.6 ships `win_amd64`
+  wheels for these versions, so no conda is needed.)
+- **Node** + **[pnpm](https://pnpm.io)** — `npm install -g pnpm`, or `corepack enable pnpm`.
+- **ffmpeg** on `PATH` — `winget install Gyan.FFmpeg` (or `choco install ffmpeg`),
+  then reopen the terminal.
+
+### Setup
+
+```powershell
+python -m venv backend\.venv
+backend\.venv\Scripts\python -m pip install --upgrade pip
+backend\.venv\Scripts\pip install -r backend\requirements.txt
+cd frontend; pnpm install; cd ..
+```
+
+The first processing run downloads the RTMPose models (~40 MB) to
+`%USERPROFILE%\.cache\rtmlib`.
+
+### Run
+
+Two terminals from the repo root.
+
+**Backend** (`http://localhost:8000`):
+
+```powershell
+cd backend
+$env:MPLBACKEND="Agg"; $env:QT_QPA_PLATFORM="offscreen"; $env:PYTHONPATH="."
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+```
+
+**Frontend** (`http://localhost:5173`):
+
+```powershell
+cd frontend
+pnpm dev
+```
+
+Tests: `cd backend; $env:PYTHONPATH="."; .venv\Scripts\python -m pytest -q`.
+
 ## How to record (read this — it determines accuracy)
 
 Pose2Sim triangulates the **same motion seen from several cameras**, so accuracy

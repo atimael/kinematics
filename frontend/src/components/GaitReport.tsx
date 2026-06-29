@@ -14,7 +14,7 @@ function MetricTable({ rows, indicative }: { rows: GaitRow[]; indicative?: boole
         <tbody>
           {rows.map((r, i) => (
             <tr
-              key={r.label}
+              key={`${r.label}-${r.unit}-${i}`}
               className={`border-t border-line ${i === 0 ? "border-t-0" : ""} ${
                 r.derived ? "bg-bg" : i % 2 ? "bg-bg/40" : ""
               }`}
