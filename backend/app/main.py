@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -14,6 +15,13 @@ from app.models import PROCESSING_STAGES, ProjectMeta, ProjectParams, ResultsSum
 from app.pipeline import outputs
 from app.pipeline.config import write_config
 from app.pipeline.runner import manager
+
+# Windows can only spawn/stream subprocesses (the pipeline worker) on the asyncio
+# Proactor loop; the Selector loop raises NotImplementedError, which surfaces as
+# "Failed to launch worker". Force Proactor before uvicorn creates the loop —
+# this module is imported before the server starts.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 app = FastAPI(title="Pose2Sim Kinematics", version="1.0")
 app.add_middleware(
