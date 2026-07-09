@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import subprocess
 import sys
+import threading
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -99,21 +102,53 @@ class JobManager:
         job.status = "running"
         self._persist(job)
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                PYBIN, "-m", "app.pipeline.worker", str(project_dir), ",".join(job.stages),
-                cwd=str(BACKEND_DIR), env=env,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        loop = asyncio.get_running_loop()
+        cmd = [PYBIN, "-m", "app.pipeline.worker", str(project_dir), ",".join(job.stages)]
+
+        # Plain synchronous Popen driven from threads. asyncio.create_subprocess_exec
+        # only works on the Proactor loop on Windows (the Selector loop raises
+        # NotImplementedError, surfaced as "Failed to launch worker"); Popen is
+        # loop- and platform-agnostic.
+        def _spawn() -> subprocess.Popen:
+            return subprocess.Popen(
+                cmd, cwd=str(BACKEND_DIR), env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
             )
+
+        try:
+            proc = await loop.run_in_executor(None, _spawn)
         except Exception as exc:  # noqa: BLE001
-            job.status, job.error = "failed", f"Failed to launch worker: {exc}"
+            logging.getLogger("uvicorn.error").exception("Failed to launch worker: %s", cmd)
+            job.status, job.error = "failed", f"Failed to launch worker: {exc!r}"
             self._broadcast(job, {"type": "job", "status": "failed", "error": job.error})
             self._finish(job)
             return
 
-        assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode(errors="replace").strip()
+        sentinel = object()
+        stdout_q: asyncio.Queue = asyncio.Queue()
+        stderr_buf: list[str] = []
+
+        def _read_stdout() -> None:
+            try:
+                for line in proc.stdout:
+                    loop.call_soon_threadsafe(stdout_q.put_nowait, line)
+            finally:
+                loop.call_soon_threadsafe(stdout_q.put_nowait, sentinel)
+
+        def _read_stderr() -> None:
+            for line in proc.stderr:
+                stderr_buf.append(line)
+
+        t_err = threading.Thread(target=_read_stderr, name=f"worker-err-{job.id}", daemon=True)
+        threading.Thread(target=_read_stdout, name=f"worker-out-{job.id}", daemon=True).start()
+        t_err.start()
+
+        while True:
+            line = await stdout_q.get()
+            if line is sentinel:
+                break
+            line = line.strip()
             if not line:
                 continue
             try:
@@ -123,13 +158,14 @@ class JobManager:
             self._apply(job, ev)
             self._broadcast(job, ev)
 
-        rc = await proc.wait()
+        rc = await loop.run_in_executor(None, proc.wait)
+        await loop.run_in_executor(None, t_err.join)
         if job.status not in ("done", "failed"):
             if rc == 0:
                 job.status = "done"
                 ev = {"type": "job", "status": "done"}
             else:
-                stderr = (await proc.stderr.read()).decode(errors="replace")[-1500:] if proc.stderr else ""
+                stderr = "".join(stderr_buf)[-1500:]
                 job.status, job.error = "failed", stderr or f"worker exited with code {rc}"
                 ev = {"type": "job", "status": "failed", "error": job.error}
             self._broadcast(job, ev)
