@@ -15,7 +15,12 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
     try {
-      detail = (await res.json()).detail ?? detail;
+      const d = (await res.json()).detail;
+      if (Array.isArray(d)) {
+        detail = d.map((e) => `${(e.loc ?? []).slice(1).join(".") || "field"}: ${e.msg}`).join("; ");
+      } else if (typeof d === "string") {
+        detail = d;
+      }
     } catch {
       /* non-JSON error body */
     }

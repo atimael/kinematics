@@ -27,13 +27,32 @@ export function NewProjectForm() {
   const create = useCreateProject();
   const nav = useNavigate();
 
-  const set = <K extends keyof ProjectParams>(k: K, v: ProjectParams[K] | null) =>
+  const set = <K extends keyof ProjectParams>(k: K, v: ProjectParams[K] | null | undefined) =>
     setP((prev) => ({ ...prev, [k]: v }));
   const num = (v: string): number | null => (v === "" ? null : Number(v));
+  const numU = (v: string): number | undefined => (v === "" ? undefined : Number(v));
+
+  const clampInt = (v: number | undefined, min: number, max: number, def: number) => {
+    const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : def;
+    return Math.min(max, Math.max(min, n));
+  };
+  const positive = (v: number | undefined, def: number) =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? v : def;
 
   const submit = () => {
     if (!p.name?.trim()) return;
-    create.mutate(p, { onSuccess: (proj) => nav(`/projects/${proj.id}`) });
+    // Guarantee a schema-valid payload: cleared numeric fields would otherwise
+    // send 0/NaN and the API rejects them with a 422.
+    const payload: Partial<ProjectParams> = {
+      ...p,
+      name: p.name.trim(),
+      n_cameras: clampInt(p.n_cameras, 2, 12, 4),
+      board_corners_h: clampInt(p.board_corners_h, 3, 30, 6),
+      board_corners_w: clampInt(p.board_corners_w, 3, 30, 7),
+      square_size_mm: positive(p.square_size_mm, 105),
+      filter_cutoff_hz: positive(p.filter_cutoff_hz, 6),
+    };
+    create.mutate(payload, { onSuccess: (proj) => nav(`/projects/${proj.id}`) });
   };
 
   return (
@@ -45,7 +64,7 @@ export function NewProjectForm() {
             <Input value={p.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Subject A — gait" />
           </Field>
           <Field label="Number of cameras" hint="2 minimum; 3–4+ gives accurate triangulation">
-            <Input type="number" min={2} max={12} value={p.n_cameras ?? 4} onChange={(e) => set("n_cameras", Number(e.target.value))} />
+            <Input type="number" min={2} max={12} value={p.n_cameras ?? ""} onChange={(e) => set("n_cameras", numU(e.target.value))} />
           </Field>
         </div>
 
@@ -54,13 +73,13 @@ export function NewProjectForm() {
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Inner corners (H × W)" hint="Intersections where squares meet — not the square count">
               <div className="flex items-center gap-2">
-                <Input type="number" min={3} value={p.board_corners_h ?? 6} onChange={(e) => set("board_corners_h", Number(e.target.value))} />
+                <Input type="number" min={3} value={p.board_corners_h ?? ""} onChange={(e) => set("board_corners_h", numU(e.target.value))} />
                 <span className="text-muted">×</span>
-                <Input type="number" min={3} value={p.board_corners_w ?? 7} onChange={(e) => set("board_corners_w", Number(e.target.value))} />
+                <Input type="number" min={3} value={p.board_corners_w ?? ""} onChange={(e) => set("board_corners_w", numU(e.target.value))} />
               </div>
             </Field>
             <Field label="Square size (mm)">
-              <Input type="number" step="0.1" value={p.square_size_mm ?? 105} onChange={(e) => set("square_size_mm", Number(e.target.value))} />
+              <Input type="number" step="0.1" value={p.square_size_mm ?? ""} onChange={(e) => set("square_size_mm", numU(e.target.value))} />
             </Field>
             <Field label="Board placement">
               <Select
@@ -122,7 +141,7 @@ export function NewProjectForm() {
               </Select>
             </Field>
             <Field label="Filter cut-off (Hz)" hint="Butterworth low-pass; 6 Hz is the biomech default">
-              <Input type="number" step="0.5" value={p.filter_cutoff_hz ?? 6} onChange={(e) => set("filter_cutoff_hz", Number(e.target.value))} />
+              <Input type="number" step="0.5" value={p.filter_cutoff_hz ?? ""} onChange={(e) => set("filter_cutoff_hz", numU(e.target.value))} />
             </Field>
             <Toggle checked={p.do_marker_augmentation ?? true} onChange={(v) => set("do_marker_augmentation", v)} label="LSTM marker augmentation" hint="Improves anatomical markers (esp. <4 cameras)" />
             <Toggle checked={p.use_simple_model ?? false} onChange={(v) => set("use_simple_model", v)} label="Fast (simplified) IK model" hint="10× faster, less accurate. Off = full OpenSim model." />
