@@ -26,7 +26,6 @@ interactive/plot flags disabled and CPU inference (reliable on Apple Silicon).
 
 - **Python 3.11+** (tested on 3.12, macOS arm64 — OpenSim 4.6 ships a universal2 wheel, so no conda needed)
 - **Node + [pnpm](https://pnpm.io)**
-- **ffmpeg** (`brew install ffmpeg`)
 
 ## Setup
 
@@ -66,25 +65,21 @@ cd frontend && pnpm dev
 
 ## Windows installation
 
-`make` isn't available on Windows, so run the steps manually. These commands
-assume **PowerShell** from the repo root.
+The repository includes Windows launchers, so `make`, administrator access, and
+a separate ffmpeg installation are not required. Run them from the repo root in
+PowerShell or Command Prompt.
 
 ### Prerequisites
 
 - **Python 3.11–3.13, 64-bit** from [python.org](https://www.python.org/downloads/windows/) —
-  tick *"Add python.exe to PATH"* in the installer. (OpenSim 4.6 ships `win_amd64`
-  wheels for these versions, so no conda is needed.)
-- **Node** + **[pnpm](https://pnpm.io)** — `npm install -g pnpm`, or `corepack enable pnpm`.
-- **ffmpeg** on `PATH` — `winget install Gyan.FFmpeg` (or `choco install ffmpeg`),
-  then reopen the terminal.
+  choose the current-user install and tick *"Add python.exe to PATH"*. OpenSim
+  4.6 ships `win_amd64` wheels for these versions, so no conda is needed.
+- **Node** + **[pnpm](https://pnpm.io/installation)** installed for the current user.
 
 ### Setup
 
 ```powershell
-python -m venv backend\.venv
-backend\.venv\Scripts\python -m pip install --upgrade pip
-backend\.venv\Scripts\pip install -r backend\requirements.txt
-cd frontend; pnpm install; cd ..
+.\windows-install.cmd
 ```
 
 The first processing run downloads the RTMPose models (~40 MB) to
@@ -92,7 +87,16 @@ The first processing run downloads the RTMPose models (~40 MB) to
 
 ### Run
 
-Two terminals from the repo root.
+From the repo root:
+
+```powershell
+.\windows-dev.cmd
+```
+
+This starts the backend in a second terminal and the frontend at
+`http://localhost:5173`.
+
+For manual startup, use two terminals.
 
 **Backend** (`http://localhost:8000`):
 

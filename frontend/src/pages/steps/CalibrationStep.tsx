@@ -82,9 +82,12 @@ export function CalibrationStep({ project, goNext }: { project: ProjectMeta; goN
   });
   const run = useMutation({
     mutationFn: () => api.runCalibration(project.id),
+    onMutate: () => setLastError(null),
     onSuccess: (r) => {
-      setLastError(null);
       setJobId(r.job_id);
+    },
+    onError: (error) => {
+      setLastError(error instanceof Error ? error.message : "Failed to start calibration.");
     },
   });
   const accept = useMutation({

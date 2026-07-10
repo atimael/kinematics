@@ -20,9 +20,9 @@ reference-camera world is fine for kinematics.
 """
 from __future__ import annotations
 
-import subprocess
 import tempfile
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -97,13 +97,55 @@ def _camera_video(intr_dir: Path) -> Optional[Path]:
     return vids[0] if vids else None
 
 
-def _extract(video: Path, out_dir: Path) -> "subprocess.Popen":
+def _extract(video: Path, out_dir: Path) -> int:
+    """Extract evenly spaced detection frames without a system ffmpeg install.
+
+    OpenCV wheels include their own video backend, so this also works on locked
+    down Windows machines where ffmpeg is not on PATH. The previous command used
+    macOS-only VideoToolbox acceleration and failed before producing any frames
+    on Windows.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    return subprocess.Popen(
-        ["ffmpeg", "-v", "error", "-hwaccel", "videotoolbox", "-i", str(video),
-         "-vf", f"fps={_EXTRACT_FPS},scale={_DET_WIDTH}:-1", "-an", str(out_dir / "f_%05d.jpg")],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        raise ValueError(f"{video.name}: the video could not be opened. Try an MP4 file encoded with H.264.")
+
+    fps = float(cap.get(cv2.CAP_PROP_FPS))
+    if not np.isfinite(fps) or fps <= 0:
+        fps = 30.0
+    sample_step = max(fps / _EXTRACT_FPS, 1.0)
+    next_sample = 0.0
+    input_index = 0
+    output_index = 0
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if input_index + 1e-6 < next_sample:
+                input_index += 1
+                continue
+
+            height, width = frame.shape[:2]
+            if width <= 0 or height <= 0:
+                input_index += 1
+                next_sample += sample_step
+                continue
+            scaled_height = max(1, round(height * _DET_WIDTH / width))
+            interpolation = cv2.INTER_AREA if width > _DET_WIDTH else cv2.INTER_LINEAR
+            frame = cv2.resize(frame, (_DET_WIDTH, scaled_height), interpolation=interpolation)
+
+            output_index += 1
+            dest = out_dir / f"f_{output_index:05d}.jpg"
+            if not cv2.imwrite(str(dest), frame):
+                raise ValueError(f"{video.name}: failed to write extracted calibration frames.")
+            next_sample += sample_step
+            input_index += 1
+    finally:
+        cap.release()
+
+    return output_index
 
 
 def _detect_in_dir(frame_dir: Path, size: tuple[int, int]) -> dict[int, np.ndarray]:
@@ -251,9 +293,10 @@ def calibrate_project(
 
     tmp = Path(tempfile.mkdtemp(prefix="calib_"))
     log("Extracting frames from the checkerboard videos…")
-    procs = {c: _extract(videos[c], tmp / c) for c in cameras}
-    for c, p in procs.items():
-        p.wait()
+    with ThreadPoolExecutor(max_workers=min(4, len(cameras))) as pool:
+        tasks = {c: pool.submit(_extract, videos[c], tmp / c) for c in cameras}
+        for c, task in tasks.items():
+            log(f"{c}: extracted {task.result()} frames")
 
     # Resolve the real board size from frames spread across the whole clip of
     # every camera (the board comes and goes, so don't just sample the start).
