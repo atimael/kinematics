@@ -69,6 +69,14 @@ class CameraError(BaseModel):
     board_detected: Optional[bool] = None
 
 
+class SubjectSelection(BaseModel):
+    """A user click identifying the subject in one camera's trial video."""
+
+    x: float = Field(..., ge=0, le=1)
+    y: float = Field(..., ge=0, le=1)
+    time_s: float = Field(..., ge=0)
+
+
 class CalibrationResult(BaseModel):
     status: Literal["pending", "running", "done", "failed", "accepted"] = "pending"
     calib_file: Optional[str] = None
@@ -104,4 +112,5 @@ class ProjectMeta(BaseModel):
     cameras: list[str]
     status: Literal["created", "calibrated", "processing", "processed", "failed"] = "created"
     calibration: CalibrationResult = CalibrationResult()
+    subject_selections: dict[str, SubjectSelection] = Field(default_factory=dict)
     job: Optional[JobState] = None

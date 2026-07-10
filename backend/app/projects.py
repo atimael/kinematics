@@ -23,6 +23,7 @@ from app.models import ProjectMeta, ProjectParams
 from app.pipeline.config import write_config
 
 DATA_ROOT = Path(__file__).resolve().parents[1] / "data" / "projects"
+_DOWNSTREAM_DIRS = ("pose-sync", "pose-associated", "pose-3d", "kinematics")
 
 
 def camera_names(n: int) -> list[str]:
@@ -105,3 +106,15 @@ def clear_uploads(dir_path: Path) -> None:
         for f in dir_path.iterdir():
             if f.is_file():
                 f.unlink()
+
+
+def clear_processing_outputs(project_id: str, *, keep_pose: bool = False) -> None:
+    """Remove results invalidated by a video upload or subject-selection change."""
+    names = list(_DOWNSTREAM_DIRS)
+    if not keep_pose:
+        names.extend(("pose", "pose-all"))
+    root = project_dir(project_id)
+    for name in names:
+        path = root / name
+        if path.exists():
+            shutil.rmtree(path)

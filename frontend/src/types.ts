@@ -28,6 +28,12 @@ export interface CameraError {
   board_detected: boolean | null;
 }
 
+export interface SubjectSelection {
+  x: number;
+  y: number;
+  time_s: number;
+}
+
 export type CalibStatus = "pending" | "running" | "done" | "failed" | "accepted";
 
 export interface CalibrationResult {
@@ -58,6 +64,7 @@ export interface ProjectMeta {
   cameras: string[];
   status: ProjectStatus;
   calibration: CalibrationResult;
+  subject_selections: Record<string, SubjectSelection>;
   job: JobState | null;
 }
 

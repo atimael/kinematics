@@ -6,6 +6,7 @@ import type {
   ProjectMeta,
   ProjectParams,
   ResultsSummary,
+  SubjectSelection,
 } from "../types";
 
 const BASE = "/api";
@@ -82,11 +83,23 @@ export const api = {
   listVideos: (id: string) =>
     jsonFetch<Record<string, string | null>>(`${BASE}/projects/${id}/videos`),
 
+  videoUrl: (id: string, camera: string) => `${BASE}/projects/${id}/videos/${camera}/file`,
+
   uploadVideo: (id: string, camera: string, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
     return jsonFetch(`${BASE}/projects/${id}/videos/${camera}`, { method: "POST", body: fd });
   },
+
+  selectSubject: (id: string, camera: string, selection: SubjectSelection) =>
+    jsonFetch<ProjectMeta>(`${BASE}/projects/${id}/videos/${camera}/selection`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(selection),
+    }),
+
+  clearSubjectSelection: (id: string, camera: string) =>
+    jsonFetch<ProjectMeta>(`${BASE}/projects/${id}/videos/${camera}/selection`, { method: "DELETE" }),
 
   runProcessing: (id: string) =>
     jsonFetch<{ job_id: string; stages: string[] }>(`${BASE}/projects/${id}/process`, {

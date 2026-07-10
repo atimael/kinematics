@@ -166,6 +166,10 @@ def run(project_dir: str, stages: list[str]) -> int:
     os.chdir(project_dir)
     _neutralize_gui()
 
+    meta = json.loads(Path("project.json").read_text())
+    cameras = meta.get("cameras", [])
+    selections = meta.get("subject_selections", {})
+
     state: dict = {"stage": None}
     handler = EventLogHandler(state)
     root = logging.getLogger()
@@ -185,12 +189,22 @@ def run(project_dir: str, stages: list[str]) -> int:
                 if pose2sim is None:
                     from Pose2Sim import Pose2Sim as pose2sim  # noqa: N813
                 if stage == "poseEstimation":
+                    from app.pipeline.subject_selection import restore_unfiltered_pose
+
+                    restore_unfiltered_pose(Path("."))
                     stop = threading.Event()
                     threading.Thread(target=_monitor_pose, args=(stop, i, total), daemon=True).start()
                     try:
                         pose2sim.poseEstimation()
                     finally:
                         stop.set()
+                    if selections:
+                        from app.pipeline.subject_selection import filter_pose_to_subject
+
+                        filter_pose_to_subject(
+                            Path("."), cameras, selections,
+                            log=lambda message: emit({"type": "log", "stage": stage, "msg": message}),
+                        )
                 else:
                     getattr(pose2sim, stage)()
         except Exception as exc:  # noqa: BLE001 — report any stage failure verbatim

@@ -141,7 +141,8 @@ depends on the capture:
 2. **Calibration** — upload each camera's intrinsics clip and extrinsics board
    frame, run calibration, review the per-camera reprojection error
    (< 0.5 px excellent, < 1 px fine), accept.
-3. **Trial videos** — one clip per camera, start processing.
+3. **Trial videos** — one clip per camera. If other people are visible, pause each
+   preview on a clear frame and select the same subject in every camera before processing.
 4. **Results** — joint-angle and 3D-trajectory charts; **Download CSV** for each.
 
 ## Outputs

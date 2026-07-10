@@ -3,15 +3,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import sys
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app import projects
-from app.models import PROCESSING_STAGES, ProjectMeta, ProjectParams, ResultsSummary
+from app.models import PROCESSING_STAGES, ProjectMeta, ProjectParams, ResultsSummary, SubjectSelection
 from app.pipeline import outputs
 from app.pipeline.config import write_config
 from app.pipeline.runner import manager
@@ -185,6 +186,12 @@ async def upload_video(project_id: str, camera: str, file: UploadFile = File(...
     for stale in vd.glob(f"{camera}.*"):
         stale.unlink()
     await _save_upload(vd / f"{camera}.{ext}", file)
+    meta.subject_selections.pop(camera, None)
+    meta.job = None
+    if meta.status in ("processing", "processed", "failed"):
+        meta.status = "calibrated"
+    projects.clear_processing_outputs(project_id)
+    projects.save_meta(meta)
     return {"camera": camera, "saved": f"{camera}.{ext}"}
 
 
@@ -197,6 +204,45 @@ def list_videos(project_id: str) -> dict:
         hits = sorted(f.name for f in vd.glob(f"{cam}.*")) if vd.exists() else []
         out[cam] = hits[0] if hits else None
     return out
+
+
+@app.get("/api/projects/{project_id}/videos/{camera}/file")
+def get_video(project_id: str, camera: str) -> FileResponse:
+    meta = _meta_or_404(project_id)
+    _camera_or_404(meta, camera)
+    hits = sorted(p for p in projects.videos_dir(project_id).glob(f"{camera}.*") if p.is_file())
+    if not hits:
+        raise HTTPException(404, f"Missing trial video for {camera}")
+    media_type = mimetypes.guess_type(hits[0].name)[0] or "application/octet-stream"
+    return FileResponse(hits[0], media_type=media_type)
+
+
+@app.put("/api/projects/{project_id}/videos/{camera}/selection", response_model=ProjectMeta)
+def save_subject_selection(project_id: str, camera: str, selection: SubjectSelection) -> ProjectMeta:
+    meta = _meta_or_404(project_id)
+    _camera_or_404(meta, camera)
+    if not list(projects.videos_dir(project_id).glob(f"{camera}.*")):
+        raise HTTPException(400, f"Upload a trial video for {camera} first")
+    meta.subject_selections[camera] = selection
+    meta.job = None
+    if meta.status in ("processing", "processed", "failed"):
+        meta.status = "calibrated"
+    projects.clear_processing_outputs(project_id, keep_pose=True)
+    projects.save_meta(meta)
+    return meta
+
+
+@app.delete("/api/projects/{project_id}/videos/{camera}/selection", response_model=ProjectMeta)
+def clear_subject_selection(project_id: str, camera: str) -> ProjectMeta:
+    meta = _meta_or_404(project_id)
+    _camera_or_404(meta, camera)
+    meta.subject_selections.pop(camera, None)
+    meta.job = None
+    if meta.status in ("processing", "processed", "failed"):
+        meta.status = "calibrated"
+    projects.clear_processing_outputs(project_id, keep_pose=True)
+    projects.save_meta(meta)
+    return meta
 
 
 def _processing_stages(meta: ProjectMeta) -> list[str]:
@@ -216,6 +262,9 @@ async def run_processing(project_id: str) -> dict:
     for cam in meta.cameras:
         if not list(projects.videos_dir(project_id).glob(f"{cam}.*")):
             raise HTTPException(400, f"Missing trial video for {cam}")
+    if meta.subject_selections and set(meta.subject_selections) != set(meta.cameras):
+        missing = [cam for cam in meta.cameras if cam not in meta.subject_selections]
+        raise HTTPException(400, f"Select the subject in every camera; missing: {', '.join(missing)}")
     _detect_extensions_and_rewrite(meta)
     try:
         job = await manager.start(project_id, "processing", _processing_stages(meta))
