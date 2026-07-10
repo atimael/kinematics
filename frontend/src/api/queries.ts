@@ -61,6 +61,17 @@ export interface JobStream {
   error: string | null;
 }
 
+function calibrationProgressFromLog(stage: string | null, message: string, current: number): number {
+  if (stage !== "calibration") return current;
+  if (message.startsWith("Extracting frames")) return Math.max(current, 5);
+  if (message.includes(": extracted ")) return Math.min(25, current + 5);
+  if (message.includes(": board detected in ")) return Math.min(70, current + 8);
+  if (message.includes(": intrinsics from ")) return Math.min(78, current + 4);
+  if (message.startsWith("Synced camera groups:")) return Math.max(current, 85);
+  if (message.startsWith("Linked {")) return Math.min(96, current + 5);
+  return current;
+}
+
 /** Subscribe to a job's SSE stream. EventSource is an external resource -> useEffect is warranted. */
 export function useJobStream(projectId: string, jobId: string | null, onDone?: () => void): JobStream {
   const [state, setState] = useState<JobStream>({
@@ -92,6 +103,7 @@ export function useJobStream(projectId: string, jobId: string | null, onDone?: (
           }
         } else if (ev.type === "log" && ev.msg) {
           next.logs = [...prev.logs.slice(-400), ev.msg];
+          next.pct = calibrationProgressFromLog(next.stage, ev.msg, prev.pct);
         } else if (ev.type === "calib") {
           next.calib = { px: ev.px ?? [], mm: ev.mm ?? [] };
         } else if (ev.type === "job") {

@@ -72,10 +72,26 @@ export function NewProjectForm() {
           <div className="mb-3 text-[13px] font-semibold">Checkerboard</div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Inner corners (H × W)" hint="Intersections where squares meet — not the square count">
-              <div className="flex items-center gap-2">
-                <Input type="number" min={3} value={p.board_corners_h ?? ""} onChange={(e) => set("board_corners_h", numU(e.target.value))} />
-                <span className="text-muted">×</span>
-                <Input type="number" min={3} value={p.board_corners_w ?? ""} onChange={(e) => set("board_corners_w", numU(e.target.value))} />
+              <div className="grid grid-cols-[minmax(4rem,1fr)_auto_minmax(4rem,1fr)] items-center gap-2">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={3}
+                  aria-label="Checkerboard inner corners horizontally"
+                  className="min-w-0 appearance-none text-center text-[17px] font-semibold text-ink caret-brand [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  value={p.board_corners_h ?? ""}
+                  onChange={(e) => set("board_corners_h", numU(e.target.value))}
+                />
+                <span className="text-[17px] font-medium text-muted" aria-hidden>×</span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={3}
+                  aria-label="Checkerboard inner corners vertically"
+                  className="min-w-0 appearance-none text-center text-[17px] font-semibold text-ink caret-brand [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  value={p.board_corners_w ?? ""}
+                  onChange={(e) => set("board_corners_w", numU(e.target.value))}
+                />
               </div>
             </Field>
             <Field label="Square size (mm)">

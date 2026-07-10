@@ -62,6 +62,11 @@ export function CalibrationStep({ project, goNext }: { project: ProjectMeta; goN
   const { data: files } = useCalibrationFiles(project.id);
   const [jobId, setJobId] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const persistedJobId =
+    project.job?.kind === "calibration" && (project.job.status === "queued" || project.job.status === "running")
+      ? project.job.id
+      : null;
+  const activeJobId = jobId ?? persistedJobId;
   const invalidateFiles = () => qc.invalidateQueries({ queryKey: ["calibFiles", project.id] });
 
   const upload = useMutation({
@@ -87,7 +92,13 @@ export function CalibrationStep({ project, goNext }: { project: ProjectMeta; goN
       setJobId(r.job_id);
     },
     onError: (error) => {
-      setLastError(error instanceof Error ? error.message : "Failed to start calibration.");
+      const message = error instanceof Error ? error.message : "Failed to start calibration.";
+      if (persistedJobId && message.includes("already running")) {
+        setJobId(persistedJobId);
+        setLastError(null);
+      } else {
+        setLastError(message);
+      }
     },
   });
   const accept = useMutation({
@@ -102,7 +113,7 @@ export function CalibrationStep({ project, goNext }: { project: ProjectMeta; goN
   const calib = project.calibration;
   const errorByCam = new Map(calib.cameras.map((c) => [c.camera, c]));
   const isDone = calib.status === "done" || calib.status === "accepted";
-  const running = jobId && !isDone;
+  const running = !!activeJobId && !isDone;
 
   const onJobDone = (status: "done" | "failed", error?: string | null) => {
     setJobId(null);
@@ -167,7 +178,7 @@ export function CalibrationStep({ project, goNext }: { project: ProjectMeta; goN
 
         {running && (
           <div className="rounded-xl border border-line p-4">
-            <JobProgress projectId={project.id} jobId={jobId} onDone={onJobDone} />
+            <JobProgress projectId={project.id} jobId={activeJobId} onDone={onJobDone} />
           </div>
         )}
 
