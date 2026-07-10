@@ -71,14 +71,18 @@ export function Field({
   label,
   hint,
   children,
+  className = "",
+  labelClassName = "",
 }: {
   label: string;
   hint?: string;
   children: ReactNode;
+  className?: string;
+  labelClassName?: string;
 }) {
   return (
-    <label className="block">
-      <div className="mb-1 text-[13px] font-medium text-ink">{label}</div>
+    <label className={`flex min-w-0 flex-col ${className}`}>
+      <div className={`mb-1.5 text-[13px] font-medium leading-5 text-ink ${labelClassName}`}>{label}</div>
       {children}
       {hint && <div className="mt-1 text-[12px] leading-snug text-muted">{hint}</div>}
     </label>
@@ -88,7 +92,7 @@ export function Field({
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] tabular outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/15 ${className}`}
+      className={`h-10 w-full rounded-lg border border-line bg-surface px-3 text-[14px] leading-none tabular outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
       {...props}
     />
   );
@@ -98,7 +102,7 @@ export function Select({ className = "", children, ...props }: SelectHTMLAttribu
   return (
     <div className="relative">
       <select
-        className={`w-full appearance-none rounded-lg border border-line bg-surface px-3 py-2 pr-9 text-[14px] text-ink outline-none transition-[border-color,box-shadow] duration-150 ease-out focus:border-brand focus:ring-2 focus:ring-brand/15 ${className}`}
+        className={`h-10 w-full appearance-none rounded-lg border border-line bg-surface px-3 pr-9 text-[14px] text-ink outline-none transition-[border-color,box-shadow] duration-150 ease-out focus:border-brand focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
         {...props}
       >
         {children}

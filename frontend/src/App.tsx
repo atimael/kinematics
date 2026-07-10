@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 import { Link, Route, Routes } from "react-router-dom";
 import Home from "./pages/Home";
 import Project from "./pages/Project";
 
 export default function App() {
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("kinematics-theme", dark ? "dark" : "light");
+  }, [dark]);
+
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-10 border-b border-line bg-surface/80 backdrop-blur">
@@ -12,14 +21,25 @@ export default function App() {
             <span className="text-[15px] font-semibold tracking-tight">Kinematics</span>
             <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand">Pose2Sim</span>
           </Link>
-          <a
-            href="https://github.com/perfanalytics/pose2sim"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[13px] text-muted hover:text-ink"
-          >
-            About the pipeline
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://github.com/perfanalytics/pose2sim"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden text-[13px] text-muted transition-colors hover:text-ink sm:block"
+            >
+              About the pipeline
+            </a>
+            <button
+              type="button"
+              onClick={() => setDark((value) => !value)}
+              aria-label={dark ? "Use light theme" : "Use dark theme"}
+              title={dark ? "Use light theme" : "Use dark theme"}
+              className="grid size-9 place-items-center rounded-lg border border-line bg-surface text-muted transition-colors hover:border-brand/40 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+            >
+              {dark ? <Sun aria-hidden className="size-4" /> : <Moon aria-hidden className="size-4" />}
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">

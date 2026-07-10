@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 import { useCreateProject } from "../api/queries";
 import type { ProjectParams } from "../types";
 import { Button, Card, CardHeader, Field, Input, Select, Toggle } from "./ui";
@@ -56,29 +57,29 @@ export function NewProjectForm() {
   };
 
   return (
-    <Card>
+    <Card className="capture-form">
       <CardHeader title="New capture session" desc="Multi-camera markerless 3D kinematics" />
       <div className="space-y-5 p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="capture-form-primary grid gap-4">
           <Field label="Session name">
             <Input value={p.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Subject A — gait" />
           </Field>
           <Field label="Number of cameras" hint="2 minimum; 3–4+ gives accurate triangulation">
-            <Input type="number" min={2} max={12} value={p.n_cameras ?? ""} onChange={(e) => set("n_cameras", numU(e.target.value))} />
+            <Input className="text-center" type="number" min={2} max={12} value={p.n_cameras ?? ""} onChange={(e) => set("n_cameras", numU(e.target.value))} />
           </Field>
         </div>
 
-        <div className="rounded-xl border border-line bg-bg p-4">
-          <div className="mb-3 text-[13px] font-semibold">Checkerboard</div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Inner corners (H × W)" hint="Intersections where squares meet — not the square count">
-              <div className="grid grid-cols-[minmax(4rem,1fr)_auto_minmax(4rem,1fr)] items-center gap-2">
+        <fieldset className="border-y border-line py-4">
+          <legend className="px-1 text-[13px] font-semibold">Checkerboard</legend>
+          <div className="checkerboard-fields grid gap-4">
+            <Field className="checkerboard-corners" label="Inner corners (H × W)" hint="Intersections where squares meet, not the square count">
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                 <Input
                   type="number"
                   inputMode="numeric"
                   min={3}
                   aria-label="Checkerboard inner corners horizontally"
-                  className="min-w-0 appearance-none text-center text-[17px] font-semibold text-ink caret-brand [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="min-w-0 text-center font-semibold text-ink caret-brand"
                   value={p.board_corners_h ?? ""}
                   onChange={(e) => set("board_corners_h", numU(e.target.value))}
                 />
@@ -88,14 +89,14 @@ export function NewProjectForm() {
                   inputMode="numeric"
                   min={3}
                   aria-label="Checkerboard inner corners vertically"
-                  className="min-w-0 appearance-none text-center text-[17px] font-semibold text-ink caret-brand [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="min-w-0 text-center font-semibold text-ink caret-brand"
                   value={p.board_corners_w ?? ""}
                   onChange={(e) => set("board_corners_w", numU(e.target.value))}
                 />
               </div>
             </Field>
             <Field label="Square size (mm)">
-              <Input type="number" step="0.1" value={p.square_size_mm ?? ""} onChange={(e) => set("square_size_mm", numU(e.target.value))} />
+              <Input className="text-center" type="number" step="0.1" value={p.square_size_mm ?? ""} onChange={(e) => set("square_size_mm", numU(e.target.value))} />
             </Field>
             <Field label="Board placement">
               <Select
@@ -107,17 +108,17 @@ export function NewProjectForm() {
               </Select>
             </Field>
           </div>
-        </div>
+        </fieldset>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Participant height (m)" hint="Measured → accurate scaling">
-            <Input type="number" step="0.01" placeholder="auto" value={p.participant_height_m ?? ""} onChange={(e) => set("participant_height_m", num(e.target.value))} />
+        <div className="participant-fields grid gap-4">
+          <Field label="Participant height (m)" hint="Measured value improves scaling">
+            <Input className="text-center" type="number" step="0.01" placeholder="auto" value={p.participant_height_m ?? ""} onChange={(e) => set("participant_height_m", num(e.target.value))} />
           </Field>
           <Field label="Participant mass (kg)">
-            <Input type="number" step="0.1" placeholder="70" value={p.participant_mass_kg ?? ""} onChange={(e) => set("participant_mass_kg", num(e.target.value))} />
+            <Input className="text-center" type="number" step="0.1" placeholder="70" value={p.participant_mass_kg ?? ""} onChange={(e) => set("participant_mass_kg", num(e.target.value))} />
           </Field>
-          <Field label="Frame rate (fps)" hint="Blank → auto-detect">
-            <Input type="number" step="1" placeholder="auto" value={p.frame_rate ?? ""} onChange={(e) => set("frame_rate", num(e.target.value))} />
+          <Field label="Frame rate (fps)" hint="Leave blank to auto-detect">
+            <Input className="text-center" type="number" step="1" placeholder="auto" value={p.frame_rate ?? ""} onChange={(e) => set("frame_rate", num(e.target.value))} />
           </Field>
         </div>
 
@@ -134,14 +135,7 @@ export function NewProjectForm() {
           aria-expanded={advanced}
           className="inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium text-brand transition-opacity duration-150 ease-out hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-            className={`size-3.5 transition-transform duration-200 ease-out ${advanced ? "rotate-180" : ""}`}
-          >
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ChevronDown aria-hidden className={`size-3.5 transition-transform duration-200 ease-out ${advanced ? "rotate-180" : ""}`} />
           Advanced options
         </button>
         {advanced && (
@@ -157,7 +151,7 @@ export function NewProjectForm() {
               </Select>
             </Field>
             <Field label="Filter cut-off (Hz)" hint="Butterworth low-pass; 6 Hz is the biomech default">
-              <Input type="number" step="0.5" value={p.filter_cutoff_hz ?? ""} onChange={(e) => set("filter_cutoff_hz", numU(e.target.value))} />
+              <Input className="text-center" type="number" step="0.5" value={p.filter_cutoff_hz ?? ""} onChange={(e) => set("filter_cutoff_hz", numU(e.target.value))} />
             </Field>
             <Toggle checked={p.do_marker_augmentation ?? true} onChange={(v) => set("do_marker_augmentation", v)} label="LSTM marker augmentation" hint="Improves anatomical markers (esp. <4 cameras)" />
             <Toggle checked={p.use_simple_model ?? false} onChange={(v) => set("use_simple_model", v)} label="Fast (simplified) IK model" hint="10× faster, less accurate. Off = full OpenSim model." />

@@ -16,6 +16,24 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+:root {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --color-bg: oklch(0.17 0.012 257);
+  --color-surface: oklch(0.215 0.014 257);
+  --color-ink: oklch(0.93 0.008 257);
+  --color-muted: oklch(0.7 0.014 257);
+  --color-line: oklch(0.32 0.016 257);
+  --color-brand: oklch(0.69 0.16 264);
+  --color-brand-soft: oklch(0.29 0.07 264);
+  --color-good: oklch(0.72 0.15 150);
+  --color-warn: oklch(0.79 0.14 75);
+  --color-bad: oklch(0.7 0.18 22);
+}
+
 html,
 body,
 #root {
@@ -29,6 +47,71 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+input[type="number"] {
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.capture-form {
+  container-type: inline-size;
+}
+
+.capture-form-primary,
+.checkerboard-fields,
+.participant-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 27rem) {
+  .capture-form-primary,
+  .participant-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .participant-fields > label:last-child {
+    grid-column: 1 / -1;
+    width: calc((100% - 1rem) / 2);
+    justify-self: center;
+  }
+
+  .checkerboard-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .checkerboard-corners {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (min-width: 42rem) {
+  .checkerboard-fields {
+    grid-template-columns: minmax(15rem, 1.4fr) minmax(9rem, 0.8fr) minmax(12rem, 1fr);
+  }
+
+  .checkerboard-corners {
+    grid-column: auto;
+  }
+
+  .participant-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .participant-fields > label:last-child {
+    grid-column: auto;
+    width: auto;
+  }
+
+  .checkerboard-fields > label > div:first-child,
+  .participant-fields > label > div:first-child {
+    min-height: 1.25rem;
+  }
 }
 
 .tabular {
