@@ -25,10 +25,14 @@ export function TimeSeriesChart({
   data,
   yLabel,
   labelMap,
+  colorMap,
+  showLegend = true,
 }: {
   data: ChartData;
   yLabel: string;
   labelMap?: Record<string, string>;
+  colorMap?: Record<string, string>;
+  showLegend?: boolean;
 }) {
   const keys = Object.keys(data.series);
   const name = (k: string) => labelMap?.[k] ?? k;
@@ -60,14 +64,14 @@ export function TimeSeriesChart({
           contentStyle={{ borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 12 }}
           labelFormatter={(v) => `t = ${v}s`}
         />
-        {keys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+        {showLegend && keys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {keys.map((k, i) => (
           <Line
             key={k}
             type="monotone"
             dataKey={k}
             name={name(k)}
-            stroke={PALETTE[i % PALETTE.length]}
+            stroke={colorMap?.[k] ?? PALETTE[i % PALETTE.length]}
             strokeWidth={1.8}
             dot={false}
             isAnimationActive={false}

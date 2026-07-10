@@ -1,5 +1,6 @@
 import { useResults } from "../../api/queries";
 import { GaitReport } from "../../components/GaitReport";
+import { JointAngleCharts } from "../../components/JointAngleCharts";
 import { Card, Spinner, Stat } from "../../components/ui";
 import type { ProjectMeta } from "../../types";
 
@@ -30,6 +31,12 @@ export function ResultsStep({ project }: { project: ProjectMeta }) {
           tone={calib?.max_error_px != null && calib.max_error_px < 1 ? "good" : "warn"}
         />
       </div>
+
+      <JointAngleCharts
+        projectId={project.id}
+        angleColumns={summary.angle_columns}
+        enabled={summary.has_angles}
+      />
 
       <GaitReport projectId={project.id} />
     </div>

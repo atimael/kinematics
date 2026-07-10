@@ -43,6 +43,15 @@ export function useResults(id: string, enabled: boolean) {
   return useQuery({ queryKey: ["results", id], queryFn: () => api.results(id), enabled });
 }
 
+export function useAngles(id: string, columns: string[], enabled: boolean) {
+  return useQuery({
+    queryKey: ["angles", id, columns.join(",")],
+    queryFn: () => api.angles(id, columns),
+    enabled: enabled && columns.length > 0,
+    staleTime: Infinity,
+  });
+}
+
 export interface JobStream {
   status: "idle" | "running" | "done" | "failed";
   stage: string | null;
