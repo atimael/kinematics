@@ -24,6 +24,19 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 PYBIN = sys.executable  # uvicorn runs under the venv -> this is the venv python
 
 
+def _log_line(ev: dict) -> Optional[str]:
+    """A human-readable line for the on-disk job log, or None to skip the event."""
+    t = ev.get("type")
+    if t == "log":
+        return ev.get("msg", "")
+    if t == "stage" and ev.get("status") in ("start", "done", "failed"):
+        line = f"----- {ev.get('stage')}: {ev.get('status')}"
+        return line + (f" — {ev.get('error')}" if ev.get("error") else "")
+    if t == "job" and ev.get("error"):
+        return f"[job failed] {ev.get('error')}"
+    return None
+
+
 class Job:
     def __init__(self, job_id: str, project_id: str, kind: str, stages: list[str]):
         self.id = job_id
@@ -144,6 +157,13 @@ class JobManager:
         threading.Thread(target=_read_stdout, name=f"worker-out-{job.id}", daemon=True).start()
         t_err.start()
 
+        # Full job log on disk (the SSE panel only keeps the tail). Path is
+        # <project_dir>/<kind>.log, e.g. calibration.log.
+        try:
+            log_file = open(project_dir / f"{job.kind}.log", "w", encoding="utf-8")
+        except OSError:
+            log_file = None
+
         while True:
             line = await stdout_q.get()
             if line is sentinel:
@@ -157,6 +177,9 @@ class JobManager:
                 ev = {"type": "log", "stage": job.current_stage, "msg": line}
             self._apply(job, ev)
             self._broadcast(job, ev)
+            if log_file and (text := _log_line(ev)) is not None:
+                log_file.write(text + "\n")
+                log_file.flush()
 
         rc = await loop.run_in_executor(None, proc.wait)
         await loop.run_in_executor(None, t_err.join)
@@ -169,6 +192,11 @@ class JobManager:
                 job.status, job.error = "failed", stderr or f"worker exited with code {rc}"
                 ev = {"type": "job", "status": "failed", "error": job.error}
             self._broadcast(job, ev)
+            if log_file and (text := _log_line(ev)) is not None:
+                log_file.write(text + "\n")
+        if log_file:
+            log_file.write(f"===== job {job.status}\n")
+            log_file.close()
         self._finish(job)
 
     def _apply(self, job: Job, ev: dict) -> None:

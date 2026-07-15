@@ -44,8 +44,8 @@ export function JobProgress({
       </div>
       <ProgressBar pct={job.pct} />
       {job.logs.length > 0 && (
-        <pre className="max-h-40 overflow-auto rounded-lg border border-line bg-bg p-3 text-[11px] leading-relaxed text-muted">
-          {job.logs.slice(-10).join("\n")}
+        <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 text-[11px] leading-relaxed text-muted">
+          {job.logs.slice(-200).join("\n")}
         </pre>
       )}
       {job.error && (
