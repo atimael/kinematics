@@ -317,6 +317,30 @@ def _solve_world_extrinsics(
             x = parent[x]
         return x
 
+    def _stereo_relative(a: str, b: str, common: list[int]) -> Optional[tuple]:
+        """Accurate a->b relative pose from all co-visible board corners, jointly
+        optimised (cv2.stereoCalibrate) — far better than averaging single-frame
+        solvePnP relatives, which are noisy and hit the planar-board flip ambiguity.
+        Returns (R, t) or None if the fit fails or is poor."""
+        if len(common) < 6:
+            return None
+        objpts = [objp.reshape(-1, 1, 3).astype(np.float32) for _ in common]
+        img_a = [detections[a][k].reshape(-1, 1, 2).astype(np.float32) for k in common]
+        img_b = [detections[b][k].reshape(-1, 1, 2).astype(np.float32) for k in common]
+        w = int(round(K_s[a][0, 2] * 2)) or 1600
+        h = int(round(K_s[a][1, 2] * 2)) or 1200
+        try:
+            ret, *_, R, T, _, _ = cv2.stereoCalibrate(
+                objpts, img_a, img_b, K_s[a], dist[a], K_s[b], dist[b], (w, h),
+                flags=cv2.CALIB_FIX_INTRINSIC,
+                criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-5),
+            )
+        except cv2.error:
+            return None
+        if not np.isfinite(ret) or ret > 1.5:  # px; reject a poor stereo fit
+            return None
+        return R, T.reshape(3)
+
     rel_cache: dict[tuple[str, str], tuple] = {}
     for ia in range(len(cameras)):
         for ib in range(ia + 1, len(cameras)):
@@ -329,7 +353,10 @@ def _solve_world_extrinsics(
             # esp. wide-angle) but unsynced pairs scatter over metres, not cm.
             (R_ab, t_ab), n = _cluster_relative([_relative(poses[a][k], poses[b][k]) for k in common], tol=0.3)
             if n >= 10:
-                rel_cache[(a, b)] = (R_ab, t_ab)
+                refined = _stereo_relative(a, b, common)
+                rel_cache[(a, b)] = refined if refined is not None else (R_ab, t_ab)
+                log(f"Pair {a}-{b}: {'stereo-calibrated' if refined is not None else 'averaged'} "
+                    f"relative pose from {len(common)} shared board views")
                 parent[find(a)] = find(b)
 
     groups: dict[str, list[str]] = {}
@@ -464,9 +491,9 @@ def _solve_world_extrinsics(
                 "these cameras."
             )
         raise ValueError(
-            f"Camera group {grp} overlaps the rig but couldn't be aligned (best fit {min(reslist) * 1000:.0f} mm, "
-            f"need <{_LINK_TOL_M * 1000:.0f} mm). The board was likely too far or oblique where these views overlap — "
-            "record it larger and more front-on there."
+            f"Camera group {grp} overlaps the rig but couldn't be aligned (best fit {min(reslist) * 1000:.0f} mm "
+            f"over {best_ov} shared frames, need <{_LINK_TOL_M * 1000:.0f} mm). The board was likely too far or "
+            "oblique where these views overlap — record it larger and more front-on in the space the groups share."
         )
 
     world: dict[str, tuple] = {}
