@@ -55,10 +55,11 @@ class ProjectParams(BaseModel):
 
     pose_model: str = "Body_with_feet"
     pose_mode: Literal["lightweight", "balanced", "performance"] = "balanced"
-    # Detector runs every Nth frame; keypoints are tracked in between. >1 speeds
-    # up pose estimation at a small accuracy cost. Device/backend are auto-selected
-    # per host (CUDA when available), so they are not user parameters.
-    det_frequency: int = Field(1, ge=1, le=30)
+    # Detector runs every Nth frame; keypoints are tracked in between. Pose2Sim's
+    # own default is 4 — running detection every frame (1) is ~4x the detector work
+    # for negligible accuracy gain on walking. Device/backend/workers are chosen
+    # per host, so they are not user parameters.
+    det_frequency: int = Field(4, ge=1, le=30)
 
     intrinsics_extension: str = "mp4"
     extrinsics_extension: str = "png"

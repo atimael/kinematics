@@ -64,11 +64,14 @@ def test_config_is_headless_and_calculate():
     assert cal["calculate"]["extrinsics"]["extrinsics_method"] == "board"
     # Every interactive flag must be off (incl. the nested board override).
     assert cfg["pose"]["display_detection"] is False
-    # Device is auto-selected for the host (CUDA when present); config must wire it.
-    runtime = select_pose_runtime()
-    assert cfg["pose"]["device"] == runtime["device"]
+    # Device is forced per host (CUDA off macOS); config must wire it.
+    import platform
+
+    assert cfg["pose"]["device"] == select_pose_runtime()["device"]
     assert cfg["pose"]["backend"] == "onnxruntime"
-    assert cfg["pose"]["parallel_workers_pose"] == runtime["workers"]
+    # One pose worker per camera off macOS (parallelise over camera videos); 1 on macOS.
+    expected_workers = 1 if platform.system() == "Darwin" else 3
+    assert cfg["pose"]["parallel_workers_pose"] == expected_workers
     assert cfg["synchronization"]["synchronization_gui"] is False
     assert cal["calculate"]["intrinsics"]["show_detection_intrinsics"] is False
     assert cal["calculate"]["extrinsics"]["show_reprojection_error"] is False

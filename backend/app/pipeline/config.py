@@ -31,11 +31,9 @@ def select_pose_runtime() -> dict:
     stays on CPU (Apple Silicon MPS yields garbage keypoints; macOS is dev-only).
     """
     if platform.system() == "Darwin":
-        return {"device": "cpu", "backend": "onnxruntime", "workers": 1}
-    # One worker: a single GPU is saturated by one session and parallel sessions
-    # contend for VRAM. Use "cuda:0" here to pin a specific card if a host ever
-    # has more than one NVIDIA GPU.
-    return {"device": "cuda", "backend": "onnxruntime", "workers": 1}
+        return {"device": "cpu", "backend": "onnxruntime"}
+    # Use "cuda:0" to pin a specific card on a multi-GPU host.
+    return {"device": "cuda", "backend": "onnxruntime"}
 
 
 # Tiny ONNX model (single Relu) used to prove CUDA actually binds at runtime.
@@ -136,8 +134,13 @@ def build_config_dict(params: ProjectParams) -> dict:
 
     corners = [params.board_corners_h, params.board_corners_w]
     runtime = select_pose_runtime()
-    log.info("Pose runtime: device=%s backend=%s workers=%s",
-             runtime["device"], runtime["backend"], runtime["workers"])
+    # Pose2Sim runs one worker thread per camera video; parallelising across the
+    # cameras keeps the GPU fed (a single worker leaves it mostly idle while the
+    # CPU decodes and pre/post-processes). macOS stays at 1 — parallel onnxruntime
+    # workers deadlock there.
+    workers = 1 if platform.system() == "Darwin" else max(1, min(params.n_cameras, 8))
+    log.info("Pose runtime: device=%s backend=%s workers=%s det_frequency=%s",
+             runtime["device"], runtime["backend"], workers, params.det_frequency)
 
     overrides: dict[str, object] = {
         "project.project_dir": ".",
@@ -156,7 +159,7 @@ def build_config_dict(params: ProjectParams) -> dict:
         # Device/backend/workers are chosen for the host (CUDA GPU when present).
         "pose.device": runtime["device"],
         "pose.backend": runtime["backend"],
-        "pose.parallel_workers_pose": runtime["workers"],
+        "pose.parallel_workers_pose": workers,
         # Calibration: compute from the user's checkerboard footage, board extrinsics.
         "calibration.calibration_type": "calculate",
         "calibration.calculate.intrinsics.intrinsics_extension": params.intrinsics_extension,
