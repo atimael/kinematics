@@ -388,10 +388,16 @@ def _solve_world_extrinsics(
 
     trajs = [group_traj(g) for g in groups]
 
-    # 4. Link every group to group 0 by registering the board's 3D trajectory
-    # (rigid Kabsch fit at the best time offset — no fragile corner matching).
-    # Also track the best overlap/residual for a diagnostic message on failure.
+    # 4. Register groups into one world frame. Two groups can be linked when the
+    # board's 3D path overlaps in time between them (rigid Kabsch at the best time
+    # offset). A planar board is only ever co-visible to NEIGHBOURING cameras, so
+    # we chain neighbour-to-neighbour: build the graph of linkable group pairs and
+    # walk a spanning tree out from the reference group. No group ever has to
+    # co-see the board with all the others — only with a neighbour in the chain.
     def link(traj_ref: dict, traj_other: dict):
+        """Best rigid map from traj_other's frame into traj_ref's frame over the
+        time-offset search: (residual_m, R, t, offset, n_overlap) or None, plus the
+        largest shared-frame count seen (for diagnostics)."""
         span = _EXTRACT_FPS * _MAX_SYNC_OFFSET_S
         best = None
         max_overlap = 0
@@ -410,29 +416,66 @@ def _solve_world_extrinsics(
         return best, max_overlap
 
     _LINK_TOL_M = 0.10
-    world: dict[str, tuple] = {c: gpose[c] for c in groups[0]}
-    ref = groups[0][0]
-    for gi in range(1, len(groups)):
-        res, max_overlap = link(trajs[0], trajs[gi])
+    ng = len(groups)
+
+    # Pairwise: edge[(i, j)] maps group j's frame -> group i's frame when their
+    # board paths align closely enough. overlap/residual are kept for diagnostics.
+    edge: dict[tuple[int, int], tuple] = {}
+    overlap: dict[tuple[int, int], int] = {}
+    residual: dict[tuple[int, int], Optional[float]] = {}
+    for i in range(ng):
+        for j in range(i + 1, ng):
+            best, max_ov = link(trajs[i], trajs[j])
+            overlap[(i, j)] = overlap[(j, i)] = max_ov
+            residual[(i, j)] = residual[(j, i)] = best[0] if best else None
+            if best is not None and best[0] <= _LINK_TOL_M:
+                _, R, t, off, nov = best
+                edge[(i, j)] = (R, t)
+                edge[(j, i)] = _invert(R, t)
+                log(f"Link {{{','.join(groups[i])}}} <-> {{{','.join(groups[j])}}}: "
+                    f"offset {off / _EXTRACT_FPS:+.1f}s, fit {best[0] * 1000:.0f} mm over {nov} frames")
+
+    # Spanning tree out from the reference (group 0), chaining transforms to world.
+    group_to_world: dict[int, tuple] = {0: (np.eye(3), np.zeros(3))}
+    stack = [0]
+    while stack:
+        i = stack.pop()
+        Riw, tiw = group_to_world[i]
+        for j in range(ng):
+            if j in group_to_world or (i, j) not in edge:
+                continue
+            Rji, tji = edge[(i, j)]  # j frame -> i frame
+            group_to_world[j] = (Riw @ Rji, Riw @ tji + tiw)  # j frame -> world
+            stack.append(j)
+
+    unplaced = [gi for gi in range(ng) if gi not in group_to_world]
+    if unplaced:
+        gi = unplaced[0]
         grp = "{" + ",".join(groups[gi]) + "}"
-        if res is None:
+        placed = list(group_to_world)
+        best_ov = max((overlap[(p, gi)] for p in placed), default=0)
+        reslist = [residual[(p, gi)] for p in placed if residual[(p, gi)] is not None]
+        if best_ov < 6 or not reslist:
             raise ValueError(
-                f"Couldn't align camera group {grp} to the reference {{{','.join(groups[0])}}}: the board was "
-                f"co-visible in only {max_overlap} shared frames (need ≥6). Wave the board slowly through the space "
-                "all cameras see, at the same time — cam02/cam03 and the other cameras must catch it together."
+                f"Camera group {grp} never shares the board's path with the rest of the rig "
+                f"(at most {best_ov} shared frames with any connected group, need ≥6). The board must pass through "
+                "the OVERLAP between neighbouring cameras so the chain reaches this group — sweep it slowly around "
+                "the whole capture volume, handing it off from one camera's view to the next, not just in front of "
+                "these cameras."
             )
-        if res[0] > _LINK_TOL_M:
-            raise ValueError(
-                f"Couldn't align camera group {grp} to the reference {{{','.join(groups[0])}}}: best fit was "
-                f"{res[0] * 1000:.0f} mm over {res[4]} shared frames (need <{_LINK_TOL_M * 1000:.0f} mm). "
-                "Likely the board was too far/oblique for one group, or intrinsics are weak — record the board "
-                "larger and more front-on in the shared space."
-            )
-        _, Rl, tl, off, _ = res
-        log(f"Linked {{{','.join(groups[gi])}}} → reference: time offset {off / _EXTRACT_FPS:+.1f}s, fit {res[0] * 1000:.0f} mm")
+        raise ValueError(
+            f"Camera group {grp} overlaps the rig but couldn't be aligned (best fit {min(reslist) * 1000:.0f} mm, "
+            f"need <{_LINK_TOL_M * 1000:.0f} mm). The board was likely too far or oblique where these views overlap — "
+            "record it larger and more front-on there."
+        )
+
+    world: dict[str, tuple] = {}
+    for gi in range(ng):
+        Rgw, tgw = group_to_world[gi]
         for c in groups[gi]:
             Rc, tc = gpose[c]
-            world[c] = (Rc @ Rl.T, tc - Rc @ Rl.T @ tl)
+            world[c] = (Rc @ Rgw.T, tc - Rc @ Rgw.T @ tgw)
+    ref = groups[0][0]
     return world, ref
 
 

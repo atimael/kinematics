@@ -111,6 +111,50 @@ def test_unsynced_solo_cameras_are_placed_and_recovered():
         assert np.linalg.norm(wt - gt_t) < 1e-3, f"{c} translation off by {np.linalg.norm(wt - gt_t)} m"
 
 
+def test_chains_neighbours_when_board_never_co_visible_to_all():
+    """A planar board is only ever seen by neighbouring cameras. The solver must
+    chain neighbour-to-neighbour (cam1-cam2-cam3-cam4), not require every camera to
+    co-see the board with one reference. Here cam01 shares frames only with cam02,
+    cam02 with cam03, cam03 with cam04 — cam01 never overlaps cam03/cam04."""
+    cams = ["cam01", "cam02", "cam03", "cam04"]
+    eyes = {
+        "cam01": np.array([-3.0, 0.0, -2.0]),
+        "cam02": np.array([-1.0, 0.0, -2.5]),
+        "cam03": np.array([1.0, 0.0, -2.5]),
+        "cam04": np.array([3.0, 0.0, -2.0]),
+    }
+    gt = {c: _look_at(eyes[c], np.zeros(3)) for c in cams}
+    # Board sweeps left -> right; each camera only "sees" it during its window,
+    # windows overlap only between neighbours.
+    windows = {"cam01": range(0, 35), "cam02": range(25, 60), "cam03": range(50, 85), "cam04": range(75, 110)}
+    T = 110
+    objc = calibration.object_points((6, 7), 0.1).mean(axis=0)
+    path = [np.array([-1.5 + 3.0 * k / (T - 1), 0.3 * np.sin(k / 7), 0.2 * np.cos(k / 9)]) for k in range(T)]
+
+    poses: dict = {c: {} for c in cams}
+    detections: dict = {c: {} for c in cams}
+    K = np.array([[900.0, 0, 640], [0, 900.0, 360], [0, 0, 1]])
+    for c in cams:
+        Rc, tc = gt[c]
+        for k in windows[c]:
+            t_bc = Rc @ (path[k] - objc) + tc  # board (Rw=I) -> camera; board centroid path = path[k]
+            poses[c][k] = (Rc, t_bc, 0.0)
+            detections[c][k] = np.zeros((42, 1, 2), dtype=np.float32)  # only membership matters for a solo group
+
+    world, ref = calibration._solve_world_extrinsics(
+        cams, poses, detections, {c: K for c in cams}, {c: np.zeros(4) for c in cams}, calibration.object_points((6, 7), 0.1)
+    )
+
+    assert set(world) == set(cams)  # all four placed via the chain, incl. cam03/cam04
+    Rr, tr = gt[ref]
+    for c in cams:
+        Rc, tc = gt[c]
+        gt_R, gt_t = Rc @ Rr.T, tc - Rc @ Rr.T @ tr
+        wR, wt = world[c]
+        assert np.degrees(np.arccos(np.clip((np.trace(wR @ gt_R.T) - 1) / 2, -1, 1))) < 0.05
+        assert np.linalg.norm(wt - gt_t) < 1e-3
+
+
 def test_extract_frames_does_not_require_external_ffmpeg(tmp_path: Path, monkeypatch):
     video = tmp_path / "input.avi"
     frames_dir = tmp_path / "frames"
