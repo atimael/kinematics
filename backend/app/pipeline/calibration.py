@@ -335,8 +335,10 @@ def _solve_world_extrinsics(
     groups: dict[str, list[str]] = {}
     for c in cameras:
         groups.setdefault(find(c), []).append(c)
-    groups = list(groups.values())
-    log("Synced camera groups: " + ", ".join("{" + ",".join(g) + "}" for g in groups))
+    # Reference = the largest synced group: it has a triangulated (clean) board
+    # trajectory, so every other group registers to the most reliable anchor.
+    groups = sorted(groups.values(), key=len, reverse=True)
+    log("Synced camera groups (reference first): " + ", ".join("{" + ",".join(g) + "}" for g in groups))
 
     # 2. Within-group extrinsics: chain the synced relative poses (group frame = group[0]).
     gpose: dict[str, tuple] = {}
@@ -388,12 +390,15 @@ def _solve_world_extrinsics(
 
     # 4. Link every group to group 0 by registering the board's 3D trajectory
     # (rigid Kabsch fit at the best time offset — no fragile corner matching).
+    # Also track the best overlap/residual for a diagnostic message on failure.
     def link(traj_ref: dict, traj_other: dict):
         span = _EXTRACT_FPS * _MAX_SYNC_OFFSET_S
         best = None
+        max_overlap = 0
         ko = set(traj_other)
         for off in range(-span, span + 1):
             ks = [k for k in traj_ref if (k + off) in ko]
+            max_overlap = max(max_overlap, len(ks))
             if len(ks) < 6:
                 continue
             P_ref = np.array([traj_ref[k] for k in ks])
@@ -401,19 +406,29 @@ def _solve_world_extrinsics(
             R, t = _kabsch(P_oth, P_ref)
             res = float(np.median(np.linalg.norm((P_oth @ R.T + t) - P_ref, axis=1)))
             if best is None or res < best[0]:
-                best = (res, R, t, off)
-        return best
+                best = (res, R, t, off, len(ks))
+        return best, max_overlap
 
+    _LINK_TOL_M = 0.10
     world: dict[str, tuple] = {c: gpose[c] for c in groups[0]}
     ref = groups[0][0]
     for gi in range(1, len(groups)):
-        res = link(trajs[0], trajs[gi])
-        if res is None or res[0] > 0.10:
+        res, max_overlap = link(trajs[0], trajs[gi])
+        grp = "{" + ",".join(groups[gi]) + "}"
+        if res is None:
             raise ValueError(
-                f"Couldn't align camera group {{{','.join(groups[gi])}}} to the others — the board's path wasn't "
-                "seen clearly enough by both groups. Wave the board through the shared space a bit more."
+                f"Couldn't align camera group {grp} to the reference {{{','.join(groups[0])}}}: the board was "
+                f"co-visible in only {max_overlap} shared frames (need ≥6). Wave the board slowly through the space "
+                "all cameras see, at the same time — cam02/cam03 and the other cameras must catch it together."
             )
-        _, Rl, tl, off = res
+        if res[0] > _LINK_TOL_M:
+            raise ValueError(
+                f"Couldn't align camera group {grp} to the reference {{{','.join(groups[0])}}}: best fit was "
+                f"{res[0] * 1000:.0f} mm over {res[4]} shared frames (need <{_LINK_TOL_M * 1000:.0f} mm). "
+                "Likely the board was too far/oblique for one group, or intrinsics are weak — record the board "
+                "larger and more front-on in the shared space."
+            )
+        _, Rl, tl, off, _ = res
         log(f"Linked {{{','.join(groups[gi])}}} → reference: time offset {off / _EXTRACT_FPS:+.1f}s, fit {res[0] * 1000:.0f} mm")
         for c in groups[gi]:
             Rc, tc = gpose[c]
