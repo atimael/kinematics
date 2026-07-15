@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import mimetypes
 import sys
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -48,13 +50,22 @@ def _camera_or_404(meta: ProjectMeta, camera: str) -> str:
     return camera
 
 
+_log = logging.getLogger("uvicorn.error")
+
+
 async def _save_upload(dest: Path, upload: UploadFile) -> int:
     dest.parent.mkdir(parents=True, exist_ok=True)
+    start = time.perf_counter()
     size = 0
     with dest.open("wb") as fh:
         while chunk := await upload.read(1 << 20):
             fh.write(chunk)
             size += len(chunk)
+    elapsed = time.perf_counter() - start
+    _log.info(
+        "upload saved %s: %.1f MB in %.2fs (%.0f MB/s server-side)",
+        dest.name, size / 1e6, elapsed, (size / 1e6 / elapsed) if elapsed else 0,
+    )
     return size
 
 
@@ -476,3 +487,14 @@ def positions_csv(project_id: str) -> Response:
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True}
+
+
+# Serve the built frontend (frontend/dist) directly from the API server when it
+# exists. Running the built app straight from :8000 removes the Vite dev-proxy
+# hop that otherwise sits in the upload path. Mounted last so /api/* wins. Inert
+# in dev (no dist) — `pnpm dev` keeps proxying as before.
+_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")

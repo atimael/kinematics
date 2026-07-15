@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 import uuid
 from pathlib import Path
 
@@ -109,12 +110,26 @@ def clear_uploads(dir_path: Path) -> None:
 
 
 def clear_processing_outputs(project_id: str, *, keep_pose: bool = False) -> None:
-    """Remove results invalidated by a video upload or subject-selection change."""
+    """Invalidate results after a video upload or subject-selection change.
+
+    Renaming each output dir out of the way is instant; the slow recursive delete
+    (pose/ and pose-all/ can hold thousands of JSON files — very slow on Windows)
+    runs on a background thread so the upload response isn't blocked by it."""
     names = list(_DOWNSTREAM_DIRS)
     if not keep_pose:
         names.extend(("pose", "pose-all"))
     root = project_dir(project_id)
+    if not root.exists():
+        return
+    doomed = list(root.glob(".trash-*"))  # sweep leftovers from a previous crash
     for name in names:
         path = root / name
         if path.exists():
-            shutil.rmtree(path)
+            dead = root / f".trash-{name}-{uuid.uuid4().hex[:8]}"
+            try:
+                path.rename(dead)
+                doomed.append(dead)
+            except OSError:
+                shutil.rmtree(path, ignore_errors=True)
+    for dead in doomed:
+        threading.Thread(target=shutil.rmtree, args=(dead,), kwargs={"ignore_errors": True}, daemon=True).start()
