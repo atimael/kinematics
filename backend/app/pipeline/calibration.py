@@ -484,6 +484,22 @@ def calibrate_project(
             "board_detected": True,
         })
 
+    # Guard against a degenerate extrinsics solve: every non-reference camera
+    # must sit at a distinct pose. If they all collapse onto the reference origin
+    # (all-zero translation), triangulation silently produces garbage and trims
+    # the trial to a few frames — fail loudly here instead.
+    others = [c for c in cameras if c != ref]
+    for c in cameras:
+        vals = calib_toml[c]["rotation"] + calib_toml[c]["translation"]
+        if any(not np.isfinite(v) for v in vals):
+            raise ValueError(f"{c}: calibration produced non-finite extrinsics — check board detection.")
+    if others and all(all(abs(v) < 1e-9 for v in calib_toml[c]["translation"]) for c in others):
+        raise ValueError(
+            "Extrinsics collapsed to the origin (all cameras share one pose). "
+            "The checkerboard was likely not co-visible across camera pairs — re-record calibration "
+            "so overlapping cameras see the board together."
+        )
+
     calib_toml["metadata"] = {"adjusted": False, "error": 0.0}
     out = cal_dir / "Calib.toml"
     rtoml.dump(calib_toml, out)
