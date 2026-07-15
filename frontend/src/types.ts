@@ -117,6 +117,10 @@ export interface GaitReport {
   spatiotemporal: GaitRow[];
   kinematics: GaitRow[];
   enough_steps: boolean;
+  analyzed_frames?: number;
+  source_frames?: number | null;
+  coverage?: number;
+  truncated?: boolean;
 }
 
 export interface JobEvent {

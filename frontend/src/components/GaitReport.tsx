@@ -91,6 +91,14 @@ export function GaitReport({ projectId }: { projectId: string }) {
               </p>
             )}
 
+            {r.truncated && r.coverage != null && (
+              <p className="rounded-lg border border-warn/30 bg-warn/8 px-3.5 py-2.5 text-[12px] text-ink">
+                Only {Math.round(r.coverage * 100)}% of the recording was reconstructed in 3D
+                ({r.analyzed_frames} of {r.source_frames} frames) — the rest was dropped in triangulation.
+                This usually means calibration or camera overlap is off; the metrics above cover just that window.
+              </p>
+            )}
+
             <div>
               <h3 className="mb-2 text-[13px] font-semibold">Spatiotemporal</h3>
               <MetricTable rows={r.spatiotemporal} />

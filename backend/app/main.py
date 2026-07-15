@@ -349,9 +349,19 @@ def gait_analysis(project_id: str) -> dict:
     from app.pipeline import gait
 
     try:
-        return gait.gait_report(tdf, mdf, tinfo["data_rate"] or 60.0)
+        report = gait.gait_report(tdf, mdf, tinfo["data_rate"] or 60.0)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+    source_frames = outputs.source_frame_count(root)
+    analyzed_frames = len(tdf)
+    report["analyzed_frames"] = analyzed_frames
+    report["source_frames"] = source_frames
+    if source_frames:
+        coverage = round(analyzed_frames / source_frames, 3)
+        report["coverage"] = coverage
+        report["truncated"] = coverage < 0.6
+    return report
 
 
 @app.get("/api/projects/{project_id}/results/gait.csv")

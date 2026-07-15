@@ -208,6 +208,19 @@ def find_positions_trc(project_dir: Path) -> Optional[Path]:
     return None
 
 
+def source_frame_count(project_dir: Path) -> Optional[int]:
+    """Frames actually captured (max pose-JSON count across cameras). Compared to
+    the triangulated TRC length, this reveals when triangulation trimmed the trial
+    to a fraction of the recording (bad calibration/sync -> few valid frames)."""
+    for sub in ("pose-all", "pose"):
+        d = project_dir / sub
+        if d.is_dir():
+            counts = [len(list(j.glob("*.json"))) for j in d.glob("*_json")]
+            if counts:
+                return max(counts)
+    return None
+
+
 def find_angles_mot(project_dir: Path) -> Optional[Path]:
     kin = project_dir / "kinematics"
     if not kin.is_dir():
