@@ -8,12 +8,46 @@ flags are forced off so stages never block a headless worker.
 from __future__ import annotations
 
 import copy
+import logging
+import os
+import platform
 from functools import lru_cache
 from pathlib import Path
 
 import rtoml
 
 from app.models import ProjectParams
+
+log = logging.getLogger("uvicorn.error")
+
+
+def select_pose_runtime() -> dict:
+    """Pick pose device/backend/workers for the host actually running the worker.
+
+    Windows/Linux with an NVIDIA GPU -> CUDA (the big speed win). macOS is pinned
+    to CPU because Apple Silicon's CoreML/MPS provider miscomputes the YOLOX
+    detector's output ranks and silently yields garbage keypoints. CPU is the
+    correct fallback everywhere else.
+    """
+    if platform.system() == "Darwin":
+        return {"device": "cpu", "backend": "onnxruntime", "workers": 1}
+
+    device = "cpu"
+    try:
+        import onnxruntime as ort
+
+        if "CUDAExecutionProvider" in ort.get_available_providers():
+            device = "cuda"
+    except Exception as exc:  # noqa: BLE001 — missing/broken onnxruntime -> CPU
+        log.warning("onnxruntime provider probe failed, using CPU: %r", exc)
+
+    if device == "cuda":
+        # One worker: a single GPU is already saturated by one session, and
+        # parallel sessions contend for VRAM.
+        return {"device": "cuda", "backend": "onnxruntime", "workers": 1}
+    # CPU: parallel workers help throughput (the onnxruntime deadlock that forces
+    # single-worker is macOS-only, handled above).
+    return {"device": "cpu", "backend": "onnxruntime", "workers": max(1, min((os.cpu_count() or 2) - 1, 4))}
 
 
 @lru_cache(maxsize=1)
@@ -61,6 +95,9 @@ def build_config_dict(params: ProjectParams) -> dict:
     cfg = copy.deepcopy(_demo_config())
 
     corners = [params.board_corners_h, params.board_corners_w]
+    runtime = select_pose_runtime()
+    log.info("Pose runtime: device=%s backend=%s workers=%s",
+             runtime["device"], runtime["backend"], runtime["workers"])
 
     overrides: dict[str, object] = {
         "project.project_dir": ".",
@@ -75,15 +112,11 @@ def build_config_dict(params: ProjectParams) -> dict:
         "project.frame_range": "all",
         "pose.pose_model": params.pose_model,
         "pose.mode": params.pose_mode,
-        # Force CPU/onnxruntime: device='auto' picks MPS on Apple Silicon, whose
-        # onnxruntime CoreML provider miscomputes output ranks on the YOLOX
-        # detector and silently produces garbage keypoints (-> nothing
-        # triangulates). CPU inference is slower but correct.
-        "pose.device": "CPU",
-        "pose.backend": "onnxruntime",
-        # Parallel pose workers deadlock onnxruntime on macOS (worker hangs at 0%
-        # CPU mid-run). Sequential is slower but reliable.
-        "pose.parallel_workers_pose": 1,
+        "pose.det_frequency": params.det_frequency,
+        # Device/backend/workers are chosen for the host (CUDA GPU when present).
+        "pose.device": runtime["device"],
+        "pose.backend": runtime["backend"],
+        "pose.parallel_workers_pose": runtime["workers"],
         # Calibration: compute from the user's checkerboard footage, board extrinsics.
         "calibration.calibration_type": "calculate",
         "calibration.calculate.intrinsics.intrinsics_extension": params.intrinsics_extension,

@@ -55,6 +55,10 @@ class ProjectParams(BaseModel):
 
     pose_model: str = "Body_with_feet"
     pose_mode: Literal["lightweight", "balanced", "performance"] = "balanced"
+    # Detector runs every Nth frame; keypoints are tracked in between. >1 speeds
+    # up pose estimation at a small accuracy cost. Device/backend are auto-selected
+    # per host (CUDA when available), so they are not user parameters.
+    det_frequency: int = Field(1, ge=1, le=30)
 
     intrinsics_extension: str = "mp4"
     extrinsics_extension: str = "png"

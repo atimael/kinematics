@@ -2,6 +2,10 @@
 setlocal
 cd /d "%~dp0"
 
+rem GPU inference build. onnxruntime-gpu 1.27.x needs CUDA 12.x + cuDNN 9 on the
+rem machine. If your CUDA differs, change this to a matching onnxruntime-gpu build.
+set "ORT_GPU_VERSION=1.27.0"
+
 where py.exe >nul 2>&1
 if %errorlevel% equ 0 (
     set "PYTHON=py -3"
@@ -17,19 +21,27 @@ if errorlevel 1 (
     if errorlevel 1 goto :missing_pnpm
 )
 
-echo [1/4] Creating the Python environment...
+echo [1/5] Creating the Python environment...
 %PYTHON% -m venv backend\.venv
 if errorlevel 1 goto :failed
 
-echo [2/4] Updating pip...
+echo [2/5] Updating pip...
 backend\.venv\Scripts\python.exe -m pip install --upgrade pip
 if errorlevel 1 goto :failed
 
-echo [3/4] Installing the backend...
+echo [3/5] Installing the backend...
 backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 if errorlevel 1 goto :failed
 
-echo [4/4] Installing the frontend...
+echo [4/5] Enabling GPU inference (onnxruntime-gpu)...
+rem pose2sim pulls the CPU-only onnxruntime; swap it for the CUDA build so the
+rem pose estimation runs on the NVIDIA GPU instead of the CPU.
+backend\.venv\Scripts\python.exe -m pip uninstall -y onnxruntime
+backend\.venv\Scripts\python.exe -m pip install "onnxruntime-gpu==%ORT_GPU_VERSION%"
+if errorlevel 1 goto :failed
+backend\.venv\Scripts\python.exe -c "import onnxruntime as ort; ps=ort.get_available_providers(); print('ONNX Runtime providers:', ps); print('GPU (CUDA) ENABLED' if 'CUDAExecutionProvider' in ps else 'WARNING: CUDA provider NOT available - will run on CPU. Install CUDA 12.x + cuDNN 9.')"
+
+echo [5/5] Installing the frontend...
 pushd frontend
 call pnpm install
 set "RESULT=%errorlevel%"

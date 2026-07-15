@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app.models import ProjectParams
 from app.pipeline import outputs
-from app.pipeline.config import build_config_dict
+from app.pipeline.config import build_config_dict, select_pose_runtime
 
 TRC = """PathFileType\t4\t(X/Y/Z)\ttest.trc
 DataRate\tCameraRate\tNumFrames\tNumMarkers\tUnits\tOrigDataRate\tOrigDataStartFrame\tOrigNumFrames
@@ -64,7 +64,11 @@ def test_config_is_headless_and_calculate():
     assert cal["calculate"]["extrinsics"]["extrinsics_method"] == "board"
     # Every interactive flag must be off (incl. the nested board override).
     assert cfg["pose"]["display_detection"] is False
-    assert cfg["pose"]["device"] == "CPU"
+    # Device is auto-selected for the host (CUDA when present); config must wire it.
+    runtime = select_pose_runtime()
+    assert cfg["pose"]["device"] == runtime["device"]
+    assert cfg["pose"]["backend"] == "onnxruntime"
+    assert cfg["pose"]["parallel_workers_pose"] == runtime["workers"]
     assert cfg["synchronization"]["synchronization_gui"] is False
     assert cal["calculate"]["intrinsics"]["show_detection_intrinsics"] is False
     assert cal["calculate"]["extrinsics"]["show_reprojection_error"] is False

@@ -1,6 +1,11 @@
 # Pose2Sim pulls its full scientific stack (opensim, rtmlib, openvino, pandas,
-# scipy, etc.) transitively. Pinned to the versions validated on macOS arm64 /
-# Python 3.12. opensim 4.6 ships a universal2 wheel — no conda required.
+# scipy, etc.) transitively, including the CPU-only `onnxruntime`. Pinned to the
+# versions validated on macOS arm64 / Python 3.12. opensim 4.6 ships a
+# universal2 wheel — no conda required.
+#
+# Windows GPU: windows-install.cmd replaces onnxruntime with onnxruntime-gpu so
+# pose estimation runs on the NVIDIA GPU (CUDA). Do not add onnxruntime-gpu here
+# — it has no macOS wheel and would break the Mac install.
 pose2sim==0.10.47
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
