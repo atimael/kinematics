@@ -319,29 +319,38 @@ def _solve_world_extrinsics(
 
     def _stereo_relative(a: str, b: str, common: list[int]) -> Optional[tuple]:
         """Accurate a->b relative pose from all co-visible board corners, jointly
-        optimised (cv2.stereoCalibrate) — far better than averaging single-frame
-        solvePnP relatives, which are noisy and hit the planar-board flip ambiguity.
-        Returns (R, t) or None if the fit fails or is poor."""
+        optimised (cv2.stereoCalibrate). A plain checkerboard viewed from different
+        angles gets numbered 180°-rotated between cameras, which breaks the corner
+        correspondence — so we try b's corners as-is AND reversed and keep whichever
+        gives the lower stereo reprojection error. Returns (R, t, flip_b) or None if
+        neither ordering fits well. flip_b tells the caller b's corners are reversed
+        relative to a (needed so triangulation pairs the same physical corners)."""
         if len(common) < 6:
             return None
         objpts = [objp.reshape(-1, 1, 3).astype(np.float32) for _ in common]
         img_a = [detections[a][k].reshape(-1, 1, 2).astype(np.float32) for k in common]
-        img_b = [detections[b][k].reshape(-1, 1, 2).astype(np.float32) for k in common]
         w = int(round(K_s[a][0, 2] * 2)) or 1600
         h = int(round(K_s[a][1, 2] * 2)) or 1200
-        try:
-            ret, *_, R, T, _, _ = cv2.stereoCalibrate(
-                objpts, img_a, img_b, K_s[a], dist[a], K_s[b], dist[b], (w, h),
-                flags=cv2.CALIB_FIX_INTRINSIC,
-                criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-5),
-            )
-        except cv2.error:
+        best = None
+        for flip in (False, True):
+            img_b = [(detections[b][k][::-1] if flip else detections[b][k]).reshape(-1, 1, 2).astype(np.float32)
+                     for k in common]
+            try:
+                ret, *_, R, T, _, _ = cv2.stereoCalibrate(
+                    objpts, img_a, img_b, K_s[a], dist[a], K_s[b], dist[b], (w, h),
+                    flags=cv2.CALIB_FIX_INTRINSIC,
+                    criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-5),
+                )
+            except cv2.error:
+                continue
+            if np.isfinite(ret) and (best is None or ret < best[0]):
+                best = (ret, R, T.reshape(3), flip)
+        if best is None or best[0] > 1.5:  # px; neither ordering fits -> genuinely bad pair
             return None
-        if not np.isfinite(ret) or ret > 1.5:  # px; reject a poor stereo fit
-            return None
-        return R, T.reshape(3)
+        return best[1], best[2], best[3]
 
     rel_cache: dict[tuple[str, str], tuple] = {}
+    pair_flip: dict[tuple[str, str], bool] = {}
     for ia in range(len(cameras)):
         for ib in range(ia + 1, len(cameras)):
             a, b = cameras[ia], cameras[ib]
@@ -354,9 +363,15 @@ def _solve_world_extrinsics(
             (R_ab, t_ab), n = _cluster_relative([_relative(poses[a][k], poses[b][k]) for k in common], tol=0.3)
             if n >= 10:
                 refined = _stereo_relative(a, b, common)
-                rel_cache[(a, b)] = refined if refined is not None else (R_ab, t_ab)
-                log(f"Pair {a}-{b}: {'stereo-calibrated' if refined is not None else 'averaged'} "
-                    f"relative pose from {len(common)} shared board views")
+                if refined is not None:
+                    R_ref, t_ref, flip_b = refined
+                    rel_cache[(a, b)] = (R_ref, t_ref)
+                    pair_flip[(a, b)] = pair_flip[(b, a)] = flip_b
+                    log(f"Pair {a}-{b}: stereo-calibrated from {len(common)} shared views (corner flip: {flip_b})")
+                else:
+                    rel_cache[(a, b)] = (R_ab, t_ab)
+                    pair_flip[(a, b)] = pair_flip[(b, a)] = False
+                    log(f"Pair {a}-{b}: averaged relative pose from {len(common)} shared views (stereo fit poor)")
                 parent[find(a)] = find(b)
 
     groups: dict[str, list[str]] = {}
@@ -366,6 +381,24 @@ def _solve_world_extrinsics(
     # trajectory, so every other group registers to the most reliable anchor.
     groups = sorted(groups.values(), key=len, reverse=True)
     log("Synced camera groups (reference first): " + ", ".join("{" + ",".join(g) + "}" for g in groups))
+
+    # Propagate the per-pair corner-flip parity within each group so its cameras
+    # agree on the physical numbering of the board corners (needed to triangulate).
+    corner_flip = {c: False for c in cameras}
+    for g in groups:
+        placed = {g[0]: False}
+        stack = [g[0]]
+        while stack:
+            p = stack.pop()
+            for c in g:
+                if c not in placed and (p, c) in pair_flip:
+                    placed[c] = placed[p] ^ pair_flip[(p, c)]
+                    stack.append(c)
+        corner_flip.update(placed)
+
+    def _board_corners(c: str, k: int) -> np.ndarray:
+        d = detections[c][k]
+        return d[::-1] if corner_flip[c] else d
 
     # 2. Within-group extrinsics: chain the synced relative poses (group frame = group[0]).
     gpose: dict[str, tuple] = {}
@@ -401,8 +434,8 @@ def _solve_world_extrinsics(
             here = [c for c in g if k in detections[c]]
             if len(here) >= 2:
                 a, b = here[:2]
-                ua = cv2.undistortPoints(detections[a][k], K_s[a], dist[a], P=K_s[a]).reshape(-1, 2)
-                ub = cv2.undistortPoints(detections[b][k], K_s[b], dist[b], P=K_s[b]).reshape(-1, 2)
+                ua = cv2.undistortPoints(_board_corners(a, k), K_s[a], dist[a], P=K_s[a]).reshape(-1, 2)
+                ub = cv2.undistortPoints(_board_corners(b, k), K_s[b], dist[b], P=K_s[b]).reshape(-1, 2)
                 X = cv2.triangulatePoints(Pm[a], Pm[b], ua.T, ub.T)
                 traj[k] = ((X[:3] / X[3]).T).mean(axis=0)
             elif here and k in poses[here[0]]:

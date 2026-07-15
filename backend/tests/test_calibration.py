@@ -155,6 +155,53 @@ def test_chains_neighbours_when_board_never_co_visible_to_all():
         assert np.linalg.norm(wt - gt_t) < 1e-3
 
 
+def test_resolves_checkerboard_corner_flip_between_cameras():
+    """A plain checkerboard gets numbered 180°-reversed between cameras viewing it
+    from different angles, breaking the corner correspondence (stereoCalibrate then
+    rejects, triangulation is garbage). The solver must detect the flip and recover
+    the extrinsics anyway. Here cam02's corners are reversed relative to cam01."""
+    cams = ["cam01", "cam02", "cam03"]
+    eyes = {"cam01": [-0.4, 0, -2.5], "cam02": [0.4, 0, -2.5], "cam03": [-2.2, 0, -1.0]}
+    gt = {c: _look_at(np.array(v, float), np.zeros(3)) for c, v in eyes.items()}
+    windows = {"cam01": range(0, 60), "cam02": range(0, 60), "cam03": range(40, 90)}
+    T = 90
+    objp = calibration.object_points((6, 7), 0.1)
+    objc = objp.mean(axis=0)
+    K = np.array([[900.0, 0, 640], [0, 900.0, 360], [0, 0, 1]])
+    d0 = np.zeros(4)
+    rng = np.random.default_rng(3)
+    path = [np.array([0.4 * np.sin(k / 7), 0.3 * np.cos(k / 6), 0.15 * np.sin(k / 5)]) for k in range(T)]
+    boardR = [cv2.Rodrigues(rng.uniform(-0.2, 0.2, 3))[0] for _ in range(T)]
+
+    poses: dict = {c: {} for c in cams}
+    dets: dict = {c: {} for c in cams}
+    for c in cams:
+        Rc, tc = gt[c]
+        for k in windows[c]:
+            Rw, tw = boardR[k], path[k] - boardR[k] @ objc  # board centroid follows path[k]
+            Rbc, tbc = Rc @ Rw, Rc @ tw + tc
+            rvec, _ = cv2.Rodrigues(Rbc)
+            imgp, _ = cv2.projectPoints(objp, rvec, tbc, K, d0)
+            corners = imgp.reshape(-1, 1, 2).astype(np.float32)
+            if c == "cam02":
+                corners = corners[::-1].copy()  # inject the 180° corner-numbering flip
+            dets[c][k] = corners
+            poses[c][k] = (Rbc, tbc, 0.0)
+
+    world, ref = calibration._solve_world_extrinsics(
+        cams, poses, dets, {c: K for c in cams}, {c: d0 for c in cams}, objp
+    )
+
+    assert set(world) == set(cams)
+    Rr, tr = gt[ref]
+    for c in cams:
+        Rc, tc = gt[c]
+        gt_R, gt_t = Rc @ Rr.T, tc - Rc @ Rr.T @ tr
+        wR, wt = world[c]
+        assert np.degrees(np.arccos(np.clip((np.trace(wR @ gt_R.T) - 1) / 2, -1, 1))) < 0.2, f"{c} rotation"
+        assert np.linalg.norm(wt - gt_t) < 3e-3, f"{c} translation off by {np.linalg.norm(wt - gt_t)}"
+
+
 def test_extract_frames_does_not_require_external_ffmpeg(tmp_path: Path, monkeypatch):
     video = tmp_path / "input.avi"
     frames_dir = tmp_path / "frames"
