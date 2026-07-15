@@ -2,10 +2,11 @@
 setlocal
 cd /d "%~dp0"
 
-rem GPU inference build. onnxruntime-gpu 1.27.x needs CUDA 13.x + cuDNN 9; the
-rem [cuda,cudnn] extra below pulls them as pip packages, so no separate CUDA
-rem Toolkit install is needed (just an NVIDIA driver new enough for CUDA 13).
-set "ORT_GPU_VERSION=1.27.0"
+rem GPU inference build. Pinned to 1.22.x on purpose: it's the CUDA 12.x line,
+rem whose [cuda,cudnn] extra pulls real cu12 pip wheels (nvidia-*-cu12) — no CUDA
+rem Toolkit install needed. onnxruntime 1.27 switched to CUDA 13, whose pip wheels
+rem don't exist on PyPI yet. Any NVIDIA driver supporting CUDA 12+ runs cu12.
+set "ORT_GPU_VERSION=1.22.0"
 set "VENV_PY=backend\.venv\Scripts\python.exe"
 
 rem Pick a Python launcher: prefer the py launcher, else python on PATH.

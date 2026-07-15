@@ -67,10 +67,10 @@ def require_cuda() -> None:
             log.warning("onnxruntime.preload_dlls() failed: %r", exc)
 
     fix = (
-        "Reinstall with the CUDA/cuDNN pip packages: "
-        '`pip install "onnxruntime-gpu[cuda,cudnn]=={ver}"` (windows-install.cmd does this). '
-        "onnxruntime {ver} needs CUDA 13.x + cuDNN 9."
-    ).format(ver=ort.__version__)
+        'Reinstall via windows-install.cmd (`pip install "onnxruntime-gpu[cuda,cudnn]==1.22.0"`), '
+        "which pulls the CUDA 12 runtime + cuDNN 9 as pip packages matching this onnxruntime build "
+        f"(current: {ort.__version__})."
+    )
 
     available = ort.get_available_providers()
     if "CUDAExecutionProvider" not in available:
