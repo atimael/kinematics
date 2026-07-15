@@ -7,6 +7,7 @@ flags are forced off so stages never block a headless worker.
 """
 from __future__ import annotations
 
+import base64
 import copy
 import logging
 import platform
@@ -37,20 +38,45 @@ def select_pose_runtime() -> dict:
     return {"device": "cuda", "backend": "onnxruntime", "workers": 1}
 
 
+# Tiny ONNX model (single Relu) used to prove CUDA actually binds at runtime.
+_CUDA_PROBE_MODEL = base64.b64decode(
+    "CAg6NwoMCgF4EgF5IgRSZWx1EgVwcm9iZVoPCgF4EgoKCAgBEgQKAggBYg8KAXkSCgoICAESBAoCCAFCBAoAEA0="
+)
+
+
 def require_cuda() -> None:
-    """Fail loudly if GPU inference is forced but the NVIDIA CUDA provider is absent,
-    rather than letting onnxruntime silently fall back to the CPU."""
+    """Fail loudly if GPU inference is forced but CUDA won't actually run on the
+    NVIDIA card, instead of letting onnxruntime silently crawl on the CPU.
+
+    onnxruntime-gpu lists CUDAExecutionProvider even when the CUDA/cuDNN runtime
+    isn't installed — the provider list reflects the build, not what loads. So we
+    build a real session and confirm CUDA binds; a missing runtime otherwise drops
+    to CPU with only a log warning (the '100% CPU, idle GPU' symptom).
+    """
     try:
         import onnxruntime as ort
-
-        available = ort.get_available_providers()
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"onnxruntime is not usable ({exc!r}); cannot run GPU pose estimation.") from exc
+
+    available = ort.get_available_providers()
     if "CUDAExecutionProvider" not in available:
         raise RuntimeError(
-            "GPU inference is forced (pose.device=cuda) but no CUDAExecutionProvider is available "
-            f"(providers: {available}). Install onnxruntime-gpu and the NVIDIA CUDA 12.x + cuDNN runtime "
-            "(windows-install.cmd installs the pip package). Refusing to fall back to CPU or the integrated GPU."
+            f"onnxruntime-gpu is not installed (only providers: {available}). Run windows-install.cmd to install it. "
+            "Refusing to run pose estimation on the CPU or integrated GPU."
+        )
+    try:
+        session = ort.InferenceSession(_CUDA_PROBE_MODEL, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+        active = session.get_providers()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"CUDA failed to initialize ({exc}). Install the NVIDIA CUDA 12.x + cuDNN 9 runtime and put their "
+            "bin/ directories on PATH. Refusing to fall back to CPU/iGPU."
+        ) from exc
+    if "CUDAExecutionProvider" not in active:
+        raise RuntimeError(
+            "onnxruntime-gpu is installed but CUDA did not load — the session fell back to CPU. "
+            "Install the NVIDIA CUDA 12.x + cuDNN 9 runtime and ensure their bin/ directories are on PATH. "
+            "Refusing to run pose estimation on the CPU or integrated GPU."
         )
 
 
