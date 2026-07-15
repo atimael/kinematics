@@ -189,6 +189,13 @@ def run(project_dir: str, stages: list[str]) -> int:
                 if pose2sim is None:
                     from Pose2Sim import Pose2Sim as pose2sim  # noqa: N813
                 if stage == "poseEstimation":
+                    import rtoml
+
+                    device = str(rtoml.load(Path("Config.toml")).get("pose", {}).get("device", "cpu"))
+                    if device.lower().startswith("cuda"):
+                        from app.pipeline.config import require_cuda
+
+                        require_cuda()
                     stop = threading.Event()
                     threading.Thread(target=_monitor_pose, args=(stop, i, total), daemon=True).start()
                     try:

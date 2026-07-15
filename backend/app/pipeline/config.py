@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import platform
 from functools import lru_cache
 from pathlib import Path
@@ -22,32 +21,37 @@ log = logging.getLogger("uvicorn.error")
 
 
 def select_pose_runtime() -> dict:
-    """Pick pose device/backend/workers for the host actually running the worker.
+    """Force the discrete NVIDIA GPU (CUDA) for pose inference off macOS.
 
-    Windows/Linux with an NVIDIA GPU -> CUDA (the big speed win). macOS is pinned
-    to CPU because Apple Silicon's CoreML/MPS provider miscomputes the YOLOX
-    detector's output ranks and silently yields garbage keypoints. CPU is the
-    correct fallback everywhere else.
+    CUDA runs ONLY on an NVIDIA card — an Intel/AMD integrated GPU is not a CUDA
+    device, so this can never fall back to the iGPU. It also does not fall back to
+    CPU: the worker calls require_cuda() before pose estimation and fails loudly if
+    the NVIDIA runtime is missing, so a job never silently crawls on the CPU. macOS
+    stays on CPU (Apple Silicon MPS yields garbage keypoints; macOS is dev-only).
     """
     if platform.system() == "Darwin":
         return {"device": "cpu", "backend": "onnxruntime", "workers": 1}
+    # One worker: a single GPU is saturated by one session and parallel sessions
+    # contend for VRAM. Use "cuda:0" here to pin a specific card if a host ever
+    # has more than one NVIDIA GPU.
+    return {"device": "cuda", "backend": "onnxruntime", "workers": 1}
 
-    device = "cpu"
+
+def require_cuda() -> None:
+    """Fail loudly if GPU inference is forced but the NVIDIA CUDA provider is absent,
+    rather than letting onnxruntime silently fall back to the CPU."""
     try:
         import onnxruntime as ort
 
-        if "CUDAExecutionProvider" in ort.get_available_providers():
-            device = "cuda"
-    except Exception as exc:  # noqa: BLE001 — missing/broken onnxruntime -> CPU
-        log.warning("onnxruntime provider probe failed, using CPU: %r", exc)
-
-    if device == "cuda":
-        # One worker: a single GPU is already saturated by one session, and
-        # parallel sessions contend for VRAM.
-        return {"device": "cuda", "backend": "onnxruntime", "workers": 1}
-    # CPU: parallel workers help throughput (the onnxruntime deadlock that forces
-    # single-worker is macOS-only, handled above).
-    return {"device": "cpu", "backend": "onnxruntime", "workers": max(1, min((os.cpu_count() or 2) - 1, 4))}
+        available = ort.get_available_providers()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"onnxruntime is not usable ({exc!r}); cannot run GPU pose estimation.") from exc
+    if "CUDAExecutionProvider" not in available:
+        raise RuntimeError(
+            "GPU inference is forced (pose.device=cuda) but no CUDAExecutionProvider is available "
+            f"(providers: {available}). Install onnxruntime-gpu and the NVIDIA CUDA 12.x + cuDNN runtime "
+            "(windows-install.cmd installs the pip package). Refusing to fall back to CPU or the integrated GPU."
+        )
 
 
 @lru_cache(maxsize=1)
