@@ -275,84 +275,24 @@ def _kabsch(src: np.ndarray, dst: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 # ----------------------------------------------------------------------------- public API
 
-def calibrate_project(
-    project_dir: Path,
+def _solve_world_extrinsics(
     cameras: list[str],
-    corners: tuple[int, int],
-    square_mm: float,
-    board_position: str = "horizontal",
-    every_n_sec: float = 1.0,  # unused; kept for signature compatibility
+    poses: dict[str, dict[int, tuple]],
+    detections: dict[str, dict[int, np.ndarray]],
+    K_s: dict[str, np.ndarray],
+    dist: dict[str, np.ndarray],
+    objp: np.ndarray,
     log: Callable[[str], None] = lambda _m: None,
-) -> dict:
-    square_m = square_mm / 1000.0
-    cal_dir = project_dir / "calibration"
-    videos = {c: _camera_video(cal_dir / "intrinsics" / f"int_{c}_img") for c in cameras}
-    for c in cameras:
-        if videos[c] is None:
-            raise ValueError(f"{c}: a checkerboard video is required (image-only calibration isn't supported for spread cameras).")
+) -> tuple[dict[str, tuple], str]:
+    """Place every camera in one world frame. Returns {camera: (R, t)} (world->camera)
+    and the reference camera name.
 
-    tmp = Path(tempfile.mkdtemp(prefix="calib_"))
-    log("Extracting frames from the checkerboard videos…")
-    with ThreadPoolExecutor(max_workers=min(4, len(cameras))) as pool:
-        tasks = {c: pool.submit(_extract, videos[c], tmp / c) for c in cameras}
-        for c, task in tasks.items():
-            log(f"{c}: extracted {task.result()} frames")
-
-    # Resolve the real board size from frames spread across the whole clip of
-    # every camera (the board comes and goes, so don't just sample the start).
-    probe = []
-    for c in cameras:
-        fs = sorted((tmp / c).glob("f_*.jpg"))
-        if not fs:
-            raise ValueError(f"{c}: no frames could be extracted from the video — is it a valid video file?")
-        probe.extend(cv2.cvtColor(cv2.imread(str(f)), cv2.COLOR_BGR2GRAY) for f in fs[:: max(1, len(fs) // 5)][:5])
-    size = _resolve_size(probe, corners)
-    if size is None:
-        raise ValueError(
-            f"The {corners[0]}×{corners[1]} checkerboard wasn't found in the videos (every size from 3×3 to "
-            "11×11 was tried). Count the INNER corners — the intersections where black squares meet."
-        )
-    if tuple(size) != tuple(corners):
-        log(f"Board {corners[0]}×{corners[1]} didn't match; auto-detected {size[0]}×{size[1]} inner corners.")
-    objp = object_points(size, square_m)
-
-    # Detect board + calibrate intrinsics per camera.
-    detections: dict[str, dict[int, np.ndarray]] = {}
-    intr: dict[str, dict] = {}
-    native = {}
-    for c in cameras:
-        det = _detect_in_dir(tmp / c, size)
-        detections[c] = det
-        log(f"{c}: board detected in {len(det)} frames")
-        if len(det) < 4:
-            raise ValueError(f"{c}: board detected in only {len(det)} frames (need ≥4). Use a clearer/longer clip or wave the board toward {c} more.")
-        cap = cv2.VideoCapture(str(videos[c]))
-        nw, nh = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        det_dims = cv2.imread(str(next((tmp / c).glob("f_*.jpg")))).shape[:2]
-        det_w = det_dims[1]
-        keys = sorted(det)[:: max(1, len(det) // _MAX_INTRINSIC_VIEWS)][:_MAX_INTRINSIC_VIEWS]
-        rms, K_s, dist, _, _ = cv2.calibrateCamera([objp] * len(keys), [det[k] for k in keys], (det_dims[1], det_dims[0]), None, None)
-        s = nw / det_w  # scale intrinsics from detection res up to the camera's native res
-        K = np.array([[K_s[0, 0] * s, 0, K_s[0, 2] * s], [0, K_s[1, 1] * s, K_s[1, 2] * s], [0, 0, 1]])
-        intr[c] = {"K_s": K_s, "K": K, "dist": dist.ravel(), "rms": float(rms)}
-        native[c] = (nw, nh)
-        log(f"{c}: intrinsics from {len(keys)} views, RMS {rms:.3f} px")
-
-    # Per-camera board pose + image centroid at each detected frame.
-    poses: dict[str, dict[int, tuple]] = {}
-    centroids: dict[str, dict[int, np.ndarray]] = {}
-    for c in cameras:
-        pc, cc = {}, {}
-        for k, imgp in detections[c].items():
-            p = _board_pose(objp, imgp, intr[c]["K_s"], intr[c]["dist"])
-            if p is not None:
-                pc[k] = p
-                cc[k] = imgp.reshape(-1, 2).mean(axis=0)
-        poses[c], centroids[c] = pc, cc
-    K_s = {c: intr[c]["K_s"] for c in cameras}
-    dist = {c: intr[c]["dist"] for c in cameras}
-
+    Hardware-synced cameras (consistent same-frame relative board pose) are grouped
+    and solved by chained relative poses. Each group — INCLUDING a single unsynced
+    camera on its own — is then registered to the reference by rigidly aligning its
+    metric board-centroid trajectory at the best time offset. A solo camera is placeable
+    because its trajectory comes from its own solvePnP board pose, no pair required.
+    """
     # 1. Group cameras that are hardware-synced: a pair counts as synced when its
     # SAME-frame relative pose is consistent (tight cluster of translations).
     parent = {c: c for c in cameras}
@@ -464,6 +404,88 @@ def calibrate_project(
         for c in groups[gi]:
             Rc, tc = gpose[c]
             world[c] = (Rc @ Rl.T, tc - Rc @ Rl.T @ tl)
+    return world, ref
+
+
+def calibrate_project(
+    project_dir: Path,
+    cameras: list[str],
+    corners: tuple[int, int],
+    square_mm: float,
+    board_position: str = "horizontal",
+    every_n_sec: float = 1.0,  # unused; kept for signature compatibility
+    log: Callable[[str], None] = lambda _m: None,
+) -> dict:
+    square_m = square_mm / 1000.0
+    cal_dir = project_dir / "calibration"
+    videos = {c: _camera_video(cal_dir / "intrinsics" / f"int_{c}_img") for c in cameras}
+    for c in cameras:
+        if videos[c] is None:
+            raise ValueError(f"{c}: a checkerboard video is required (image-only calibration isn't supported for spread cameras).")
+
+    tmp = Path(tempfile.mkdtemp(prefix="calib_"))
+    log("Extracting frames from the checkerboard videos…")
+    with ThreadPoolExecutor(max_workers=min(4, len(cameras))) as pool:
+        tasks = {c: pool.submit(_extract, videos[c], tmp / c) for c in cameras}
+        for c, task in tasks.items():
+            log(f"{c}: extracted {task.result()} frames")
+
+    # Resolve the real board size from frames spread across the whole clip of
+    # every camera (the board comes and goes, so don't just sample the start).
+    probe = []
+    for c in cameras:
+        fs = sorted((tmp / c).glob("f_*.jpg"))
+        if not fs:
+            raise ValueError(f"{c}: no frames could be extracted from the video — is it a valid video file?")
+        probe.extend(cv2.cvtColor(cv2.imread(str(f)), cv2.COLOR_BGR2GRAY) for f in fs[:: max(1, len(fs) // 5)][:5])
+    size = _resolve_size(probe, corners)
+    if size is None:
+        raise ValueError(
+            f"The {corners[0]}×{corners[1]} checkerboard wasn't found in the videos (every size from 3×3 to "
+            "11×11 was tried). Count the INNER corners — the intersections where black squares meet."
+        )
+    if tuple(size) != tuple(corners):
+        log(f"Board {corners[0]}×{corners[1]} didn't match; auto-detected {size[0]}×{size[1]} inner corners.")
+    objp = object_points(size, square_m)
+
+    # Detect board + calibrate intrinsics per camera.
+    detections: dict[str, dict[int, np.ndarray]] = {}
+    intr: dict[str, dict] = {}
+    native = {}
+    for c in cameras:
+        det = _detect_in_dir(tmp / c, size)
+        detections[c] = det
+        log(f"{c}: board detected in {len(det)} frames")
+        if len(det) < 4:
+            raise ValueError(f"{c}: board detected in only {len(det)} frames (need ≥4). Use a clearer/longer clip or wave the board toward {c} more.")
+        cap = cv2.VideoCapture(str(videos[c]))
+        nw, nh = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        det_dims = cv2.imread(str(next((tmp / c).glob("f_*.jpg")))).shape[:2]
+        det_w = det_dims[1]
+        keys = sorted(det)[:: max(1, len(det) // _MAX_INTRINSIC_VIEWS)][:_MAX_INTRINSIC_VIEWS]
+        rms, K_s, dist, _, _ = cv2.calibrateCamera([objp] * len(keys), [det[k] for k in keys], (det_dims[1], det_dims[0]), None, None)
+        s = nw / det_w  # scale intrinsics from detection res up to the camera's native res
+        K = np.array([[K_s[0, 0] * s, 0, K_s[0, 2] * s], [0, K_s[1, 1] * s, K_s[1, 2] * s], [0, 0, 1]])
+        intr[c] = {"K_s": K_s, "K": K, "dist": dist.ravel(), "rms": float(rms)}
+        native[c] = (nw, nh)
+        log(f"{c}: intrinsics from {len(keys)} views, RMS {rms:.3f} px")
+
+    # Per-camera board pose + image centroid at each detected frame.
+    poses: dict[str, dict[int, tuple]] = {}
+    centroids: dict[str, dict[int, np.ndarray]] = {}
+    for c in cameras:
+        pc, cc = {}, {}
+        for k, imgp in detections[c].items():
+            p = _board_pose(objp, imgp, intr[c]["K_s"], intr[c]["dist"])
+            if p is not None:
+                pc[k] = p
+                cc[k] = imgp.reshape(-1, 2).mean(axis=0)
+        poses[c], centroids[c] = pc, cc
+    K_s = {c: intr[c]["K_s"] for c in cameras}
+    dist = {c: intr[c]["dist"] for c in cameras}
+
+    world, ref = _solve_world_extrinsics(cameras, poses, detections, K_s, dist, objp, log)
 
     # Write Calib.toml.
     calib_toml: dict = {}
