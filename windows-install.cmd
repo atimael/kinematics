@@ -2,8 +2,9 @@
 setlocal
 cd /d "%~dp0"
 
-rem GPU inference build. onnxruntime-gpu 1.27.x needs CUDA 12.x + cuDNN 9 on the
-rem machine. If your CUDA differs, change this to a matching onnxruntime-gpu build.
+rem GPU inference build. onnxruntime-gpu 1.27.x needs CUDA 13.x + cuDNN 9; the
+rem [cuda,cudnn] extra below pulls them as pip packages, so no separate CUDA
+rem Toolkit install is needed (just an NVIDIA driver new enough for CUDA 13).
 set "ORT_GPU_VERSION=1.27.0"
 set "VENV_PY=backend\.venv\Scripts\python.exe"
 
@@ -31,13 +32,13 @@ echo [3/5] Installing the backend...
 "%VENV_PY%" -m pip install -r backend\requirements.txt
 if errorlevel 1 goto :failed
 
-echo [4/5] Enabling GPU inference (onnxruntime-gpu)...
-rem pose2sim pulls the CPU-only onnxruntime; swap it for the CUDA build so the
-rem pose estimation runs on the NVIDIA GPU instead of the CPU.
+echo [4/5] Enabling GPU inference (onnxruntime-gpu + CUDA/cuDNN pip packages)...
+rem pose2sim pulls the CPU-only onnxruntime; swap it for the CUDA build and pull
+rem the matching CUDA 13.x + cuDNN 9 runtime as pip packages ([cuda,cudnn]).
 "%VENV_PY%" -m pip uninstall -y onnxruntime
-"%VENV_PY%" -m pip install "onnxruntime-gpu==%ORT_GPU_VERSION%"
+"%VENV_PY%" -m pip install "onnxruntime-gpu[cuda,cudnn]==%ORT_GPU_VERSION%"
 if errorlevel 1 goto :failed
-"%VENV_PY%" -c "import onnxruntime as ort; ps=ort.get_available_providers(); print('ONNX Runtime providers:', ps); print('GPU (CUDA) ENABLED' if 'CUDAExecutionProvider' in ps else 'WARNING: CUDA provider NOT available - will run on CPU. Install CUDA 12.x + cuDNN 9.')"
+"%VENV_PY%" -c "import sys; sys.path.insert(0,'backend'); from app.pipeline.config import require_cuda; require_cuda(); print('GPU (CUDA) ENABLED')" || echo WARNING: GPU is not ready yet - see the message above. Pose estimation will refuse to run until CUDA works.
 
 echo [5/5] Installing the frontend...
 pushd frontend

@@ -58,24 +58,34 @@ def require_cuda() -> None:
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"onnxruntime is not usable ({exc!r}); cannot run GPU pose estimation.") from exc
 
+    # Load the CUDA/cuDNN DLLs shipped as pip packages by onnxruntime-gpu[cuda,cudnn].
+    # Without this, onnxruntime can't find them on Windows and falls back to CPU.
+    if hasattr(ort, "preload_dlls"):
+        try:
+            ort.preload_dlls()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("onnxruntime.preload_dlls() failed: %r", exc)
+
+    fix = (
+        "Reinstall with the CUDA/cuDNN pip packages: "
+        '`pip install "onnxruntime-gpu[cuda,cudnn]=={ver}"` (windows-install.cmd does this). '
+        "onnxruntime {ver} needs CUDA 13.x + cuDNN 9."
+    ).format(ver=ort.__version__)
+
     available = ort.get_available_providers()
     if "CUDAExecutionProvider" not in available:
         raise RuntimeError(
-            f"onnxruntime-gpu is not installed (only providers: {available}). Run windows-install.cmd to install it. "
+            f"onnxruntime-gpu is not installed (only providers: {available}). {fix} "
             "Refusing to run pose estimation on the CPU or integrated GPU."
         )
     try:
         session = ort.InferenceSession(_CUDA_PROBE_MODEL, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
         active = session.get_providers()
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            f"CUDA failed to initialize ({exc}). Install the NVIDIA CUDA 12.x + cuDNN 9 runtime and put their "
-            "bin/ directories on PATH. Refusing to fall back to CPU/iGPU."
-        ) from exc
+        raise RuntimeError(f"CUDA failed to initialize ({exc}). {fix} Refusing to fall back to CPU/iGPU.") from exc
     if "CUDAExecutionProvider" not in active:
         raise RuntimeError(
-            "onnxruntime-gpu is installed but CUDA did not load — the session fell back to CPU. "
-            "Install the NVIDIA CUDA 12.x + cuDNN 9 runtime and ensure their bin/ directories are on PATH. "
+            f"onnxruntime-gpu is installed but CUDA did not load — the session fell back to CPU. {fix} "
             "Refusing to run pose estimation on the CPU or integrated GPU."
         )
 
