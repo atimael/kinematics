@@ -189,9 +189,6 @@ def run(project_dir: str, stages: list[str]) -> int:
                 if pose2sim is None:
                     from Pose2Sim import Pose2Sim as pose2sim  # noqa: N813
                 if stage == "poseEstimation":
-                    from app.pipeline.subject_selection import restore_unfiltered_pose
-
-                    restore_unfiltered_pose(Path("."))
                     stop = threading.Event()
                     threading.Thread(target=_monitor_pose, args=(stop, i, total), daemon=True).start()
                     try:
