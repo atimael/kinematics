@@ -20,6 +20,7 @@ reference-camera world is fine for kinematics.
 """
 from __future__ import annotations
 
+import os
 import tempfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -31,6 +32,10 @@ import numpy as np
 import rtoml
 
 cv2.ocl.setUseOpenCL(False)
+# Detection is parallelised at the Python level (one thread per frame); keep each
+# OpenCV call single-threaded so the two don't oversubscribe the cores.
+cv2.setNumThreads(1)
+_DET_WORKERS = max(2, (os.cpu_count() or 4))
 
 _VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm"}
 _IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -148,13 +153,22 @@ def _extract(video: Path, out_dir: Path) -> int:
     return output_index
 
 
+def _detect_one_file(jpg: Path, size: tuple[int, int]) -> Optional[tuple[int, np.ndarray]]:
+    gray = cv2.cvtColor(cv2.imread(str(jpg)), cv2.COLOR_BGR2GRAY)
+    pts = _detect_one(gray, size)
+    return (int(jpg.stem.split("_")[1]), pts) if pts is not None else None
+
+
 def _detect_in_dir(frame_dir: Path, size: tuple[int, int]) -> dict[int, np.ndarray]:
+    """Detect the board in every extracted frame. Runs one thread per frame —
+    cv2.imread and findChessboardCorners release the GIL, so this scales with
+    cores and is the difference between a slow and a quick calibration."""
+    jpgs = sorted(frame_dir.glob("f_*.jpg"))
     found: dict[int, np.ndarray] = {}
-    for jpg in sorted(frame_dir.glob("f_*.jpg")):
-        gray = cv2.cvtColor(cv2.imread(str(jpg)), cv2.COLOR_BGR2GRAY)
-        pts = _detect_one(gray, size)
-        if pts is not None:
-            found[int(jpg.stem.split("_")[1])] = pts
+    with ThreadPoolExecutor(max_workers=_DET_WORKERS) as pool:
+        for res in pool.map(lambda p: _detect_one_file(p, size), jpgs):
+            if res is not None:
+                found[res[0]] = res[1]
     return found
 
 
