@@ -383,12 +383,6 @@ def calibrate_project(
         groups.setdefault(find(c), []).append(c)
     groups = list(groups.values())
     log("Synced camera groups: " + ", ".join("{" + ",".join(g) + "}" for g in groups))
-    if any(len(g) < 2 for g in groups):
-        solo = [g[0] for g in groups if len(g) < 2]
-        raise ValueError(
-            f"Camera(s) {', '.join(solo)} aren't time-synced with any other camera and never share a same-instant "
-            "board view, so they can't be placed. Sync them (or pair each with a neighbour) and re-record."
-        )
 
     # 2. Within-group extrinsics: chain the synced relative poses (group frame = group[0]).
     gpose: dict[str, tuple] = {}
@@ -410,19 +404,30 @@ def calibrate_project(
                 gpose[c] = (R_pc @ Rp, R_pc @ tp + t_pc)
                 stack.append(c)
 
-    # 3. Board 3D-center trajectory per group (in that group's frame).
+    # 3. Board 3D-center trajectory per group (in that group's frame). With >=2
+    # cameras seeing the board we triangulate; with a single camera we fall back
+    # to its solvePnP board pose (metric, thanks to the known square size). The
+    # single-camera path is what lets an unsynced or solo camera be placed at all
+    # — it is registered to the reference by its board trajectory in stage 4.
+    objp_centroid = objp.mean(axis=0)
+
     def group_traj(g: list[str]) -> dict[int, np.ndarray]:
         Pm = {c: K_s[c] @ np.hstack([gpose[c][0], gpose[c][1].reshape(3, 1)]) for c in g}
         traj: dict[int, np.ndarray] = {}
         for k in set().union(*[set(detections[c]) for c in g]):
             here = [c for c in g if k in detections[c]]
-            if len(here) < 2:
-                continue
-            a, b = here[:2]
-            ua = cv2.undistortPoints(detections[a][k], K_s[a], dist[a], P=K_s[a]).reshape(-1, 2)
-            ub = cv2.undistortPoints(detections[b][k], K_s[b], dist[b], P=K_s[b]).reshape(-1, 2)
-            X = cv2.triangulatePoints(Pm[a], Pm[b], ua.T, ub.T)
-            traj[k] = ((X[:3] / X[3]).T).mean(axis=0)
+            if len(here) >= 2:
+                a, b = here[:2]
+                ua = cv2.undistortPoints(detections[a][k], K_s[a], dist[a], P=K_s[a]).reshape(-1, 2)
+                ub = cv2.undistortPoints(detections[b][k], K_s[b], dist[b], P=K_s[b]).reshape(-1, 2)
+                X = cv2.triangulatePoints(Pm[a], Pm[b], ua.T, ub.T)
+                traj[k] = ((X[:3] / X[3]).T).mean(axis=0)
+            elif here and k in poses[here[0]]:
+                c = here[0]
+                R_bc, t_bc, _ = poses[c][k]
+                board_c = R_bc @ objp_centroid + t_bc  # board centroid in camera c's frame
+                R_g, t_g = gpose[c]
+                traj[k] = R_g.T @ (board_c - t_g)  # -> group frame
         return traj
 
     trajs = [group_traj(g) for g in groups]
